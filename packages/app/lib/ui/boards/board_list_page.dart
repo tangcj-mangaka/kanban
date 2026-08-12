@@ -6,6 +6,7 @@ import '../../data/repository.dart';
 import '../../providers.dart';
 import '../format.dart';
 import '../theme/app_theme.dart';
+import '../canvas/board_canvas_page.dart';
 import 'board_dialogs.dart';
 
 /// 看板列表页 —— 应用入口。
@@ -319,12 +320,9 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
   }
 
   void _openBoard(BuildContext context) {
-    // 画布视图还没做，先给个明确反馈，不做成点了没反应的死按钮。
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「${widget.summary.board.name}」的画布视图还在做'),
-        behavior: SnackBarBehavior.floating,
-        width: 340,
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BoardCanvasPage(boardId: widget.summary.board.id),
       ),
     );
   }

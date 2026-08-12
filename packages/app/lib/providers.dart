@@ -28,6 +28,30 @@ final boardTagsProvider = StreamProvider.family<List<TagRow>, String>(
   (ref, boardId) => ref.watch(repositoryProvider).watchTags(boardId),
 );
 
+final boardProvider = StreamProvider.family<BoardRow?, String>(
+  (ref, boardId) => ref.watch(repositoryProvider).watchBoard(boardId),
+);
+
+/// 画布上的卡片（没删、没归档），按 z 排。
+final canvasCardsProvider = StreamProvider.family<List<CardRow>, String>(
+  (ref, boardId) => ref.watch(repositoryProvider).watchCanvasCards(boardId),
+);
+
+/// 板内所有生效的卡片-标签关系，按卡片 ID 归好组。
+///
+/// 一次查完再分组，比每张卡片各查一次省得多。
+final cardTagMapProvider = StreamProvider.family<Map<String, List<String>>, String>(
+  (ref, boardId) => ref.watch(repositoryProvider).watchCardTags(boardId).map((
+    rows,
+  ) {
+    final map = <String, List<String>>{};
+    for (final r in rows) {
+      map.putIfAbsent(r.cardId, () => []).add(r.tagId);
+    }
+    return map;
+  }),
+);
+
 /// 主题模式。P5 会持久化到设置里，现在每次启动都从跟随系统开始。
 class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override

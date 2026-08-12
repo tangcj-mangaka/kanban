@@ -306,6 +306,54 @@ class Repository {
     return archived.length;
   }
 
+  /// 一键整理：把画布上散乱的卡片排成网格。
+  ///
+  /// 保持原有的相对顺序（先按 y 再按 x），这样整理完还认得出哪张是哪张。
+  /// 整批放进一个事务——几十张卡片各改两个字段，不能拆成几十次提交。
+  Future<void> tidyCards(String boardId, {int columns = 4}) async {
+    final cards = await (db.select(db.cards)
+          ..where(
+            (c) =>
+                c.boardId.equals(boardId) &
+                c.deleted.equals(false) &
+                c.archived.equals(false),
+          ))
+        .get();
+    if (cards.isEmpty) return;
+
+    final sorted = [...cards]..sort((a, b) {
+      final dy = a.y.compareTo(b.y);
+      return dy != 0 ? dy : a.x.compareTo(b.x);
+    });
+
+    const gapX = 24.0;
+    const gapY = 24.0;
+    const rowHeight = 150.0;
+    final colWidth =
+        sorted.map((c) => c.width).reduce((a, b) => a > b ? a : b) + gapX;
+
+    await db.transaction(() async {
+      for (var i = 0; i < sorted.length; i++) {
+        final x = (i % columns) * colWidth + gapX;
+        final y = (i ~/ columns) * (rowHeight + gapY) + gapY;
+        await db.emit(
+          boardId: boardId,
+          entity: Entity.card,
+          entityId: sorted[i].id,
+          field: CardF.x,
+          value: x,
+        );
+        await db.emit(
+          boardId: boardId,
+          entity: Entity.card,
+          entityId: sorted[i].id,
+          field: CardF.y,
+          value: y,
+        );
+      }
+    });
+  }
+
   Future<double?> _maxCardZ(String boardId) async {
     final maxZ = db.cards.z.max();
     final row = await (db.selectOnly(db.cards)
