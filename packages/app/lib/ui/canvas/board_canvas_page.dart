@@ -7,7 +7,9 @@ import 'package:shared/shared.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../boards/board_dialogs.dart';
+import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
+import '../tags/tag_manager_panel.dart';
 import '../theme/app_theme.dart';
 import 'canvas_card.dart';
 import 'canvas_transform.dart';
@@ -66,10 +68,13 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
     final cards = ref.watch(canvasCardsProvider(widget.boardId)).value ?? const [];
     final tags = ref.watch(boardTagsProvider(widget.boardId)).value ?? const [];
     final cardTags = ref.watch(cardTagMapProvider(widget.boardId)).value ?? const {};
+    final commentCounts =
+        ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
     final tagById = {for (final t in tags) t.id: t};
 
     return Scaffold(
       backgroundColor: theme.kanban.canvas,
+      endDrawer: TagManagerPanel(boardId: widget.boardId),
       body: SafeArea(
         child: Column(
           children: [
@@ -111,6 +116,7 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
                               for (final id in cardTags[card.id] ?? const <String>[])
                                 if (tagById[id] != null) tagById[id]!,
                             ],
+                            commentCounts[card.id] ?? 0,
                           ),
                         if (cards.isEmpty) const _CanvasHint(),
                       ],
@@ -169,6 +175,13 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
             style: theme.textTheme.labelSmall?.copyWith(color: k.cardBody),
           ),
           const Spacer(),
+          _ToolButton(
+            icon: Icons.label_outline,
+            label: '标签',
+            tooltip: '管理标签，顺序决定分组视图的列顺序',
+            onTap: () => Scaffold.of(context).openEndDrawer(),
+          ),
+          const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.grid_view_rounded,
             label: '整理',
@@ -267,7 +280,7 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
   // 卡片
   // -------------------------------------------------------------------------
 
-  Widget _positionedCard(CardRow card, List<TagRow> tags) {
+  Widget _positionedCard(CardRow card, List<TagRow> tags, int commentCount) {
     final world = card.id == _draggingId
         ? _dragWorld
         : Offset(card.x, card.y);
@@ -286,13 +299,14 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => _bringToFront(card),
-              onDoubleTap: () => _startEditTitle(card),
+              onDoubleTap: () => _openDetail(card),
               onPanStart: (d) => _onCardDragStart(card, d),
               onPanUpdate: _onCardDragUpdate,
               onPanEnd: (_) => _onCardDragEnd(card),
               child: CanvasCard(
                 card: card.copyWith(width: width),
                 tags: tags,
+                commentCount: commentCount,
                 dragging: card.id == _draggingId,
                 editing: card.id == _editingId,
                 titleController: _titleController,
@@ -398,6 +412,11 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
     _titleFocus.requestFocus();
   }
 
+  void _openDetail(CardRow card) {
+    _commitTitle();
+    showCardDetail(context, widget.boardId, card.id);
+  }
+
   void _startEditTitle(CardRow card) {
     setState(() {
       _editingId = card.id;
@@ -426,6 +445,10 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
   Future<void> _onCardMenu(CardRow card, String action) async {
     final repo = ref.read(repositoryProvider);
     switch (action) {
+      case 'detail':
+        _openDetail(card);
+      case 'rename':
+        _startEditTitle(card);
       case 'collapse':
         await repo.setCardField(
           widget.boardId,

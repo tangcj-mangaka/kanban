@@ -162,6 +162,10 @@ class Repository {
             ..orderBy([(c) => OrderingTerm.asc(c.z)]))
           .watch();
 
+  Stream<CardRow?> watchCard(String cardId) =>
+      (db.select(db.cards)..where((c) => c.id.equals(cardId)))
+          .watchSingleOrNull();
+
   /// 干草仓库里的卡片，按归档时间倒序（用 updatedAt 近似）。
   Stream<List<CardRow>> watchArchivedCards(String boardId) =>
       (db.select(db.cards)
@@ -464,6 +468,69 @@ class Repository {
     field: CardTagF.deleted,
     value: !on,
   );
+
+  // -------------------------------------------------------------------------
+  // 评论
+  // -------------------------------------------------------------------------
+
+  /// 某张卡片的评论，按发表时间正序。
+  Stream<List<CommentRow>> watchComments(String cardId) =>
+      (db.select(db.comments)
+            ..where((c) => c.cardId.equals(cardId) & c.deleted.equals(false))
+            ..orderBy([(c) => OrderingTerm.asc(c.createdAt)]))
+          .watch();
+
+  /// 发表一条评论，返回它的 ID。
+  ///
+  /// 评论**只增不改**：发表后不能编辑，想改就删了重发。因此评论天然没有
+  /// 冲突，不需要参与 LWW——不存在两端同时修改同一条评论的情况。
+  Future<String> addComment(String boardId, String cardId, String body) async {
+    final id = _uuid.v4();
+    await db.transaction(() async {
+      for (final change in <(String, Object?)>[
+        (CommentF.cardId, cardId),
+        (CommentF.body, body),
+        (CommentF.createdAt, DateTime.now().millisecondsSinceEpoch),
+      ]) {
+        await db.emit(
+          boardId: boardId,
+          entity: Entity.comment,
+          entityId: id,
+          field: change.$1,
+          value: change.$2,
+        );
+      }
+    });
+    return id;
+  }
+
+  Future<void> deleteComment(String boardId, String commentId) => db.emit(
+    boardId: boardId,
+    entity: Entity.comment,
+    entityId: commentId,
+    field: CommentF.deleted,
+    value: true,
+  );
+
+  /// 每张卡片的评论数，用于画布上的角标。
+  Stream<Map<String, int>> watchCommentCounts(String boardId) {
+    final count = db.comments.id.count();
+    final query =
+        db.selectOnly(db.comments).join([
+            innerJoin(db.cards, db.cards.id.equalsExp(db.comments.cardId)),
+          ])
+          ..addColumns([db.comments.cardId, count])
+          ..where(
+            db.cards.boardId.equals(boardId) & db.comments.deleted.equals(false),
+          )
+          ..groupBy([db.comments.cardId]);
+
+    return query.watch().map(
+      (rows) => {
+        for (final r in rows) r.read(db.comments.cardId)!: r.read(count) ?? 0,
+      },
+    );
+  }
 
   Future<double?> _maxTagOrder(String boardId) async {
     final maxOrder = db.tags.sortOrder.max();

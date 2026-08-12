@@ -52,6 +52,19 @@ final cardTagMapProvider = StreamProvider.family<Map<String, List<String>>, Stri
   }),
 );
 
+final cardProvider = StreamProvider.family<CardRow?, String>(
+  (ref, cardId) => ref.watch(repositoryProvider).watchCard(cardId),
+);
+
+final commentsProvider = StreamProvider.family<List<CommentRow>, String>(
+  (ref, cardId) => ref.watch(repositoryProvider).watchComments(cardId),
+);
+
+/// 每张卡片的评论数，供画布上的角标用。
+final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(
+  (ref, boardId) => ref.watch(repositoryProvider).watchCommentCounts(boardId),
+);
+
 /// 主题模式。P5 会持久化到设置里，现在每次启动都从跟随系统开始。
 class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override

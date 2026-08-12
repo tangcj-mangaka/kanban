@@ -14,6 +14,9 @@ class CanvasCard extends StatelessWidget {
   /// 这张卡片身上的标签，已按板内顺序排好。
   final List<TagRow> tags;
 
+  /// 评论条数，为 0 时不显示角标。
+  final int commentCount;
+
   /// 正在被拖动——加重阴影并轻微放大，给一点"拿起来了"的手感。
   final bool dragging;
 
@@ -31,6 +34,7 @@ class CanvasCard extends StatelessWidget {
     super.key,
     required this.card,
     required this.tags,
+    required this.commentCount,
     required this.dragging,
     required this.editing,
     required this.titleController,
@@ -149,6 +153,8 @@ class CanvasCard extends StatelessWidget {
         splashRadius: 14,
         icon: Icon(Icons.more_horiz, color: k.cardBody.withValues(alpha: 0.7)),
         itemBuilder: (_) => [
+          const PopupMenuItem(value: 'detail', child: Text('打开详情')),
+          const PopupMenuItem(value: 'rename', child: Text('改标题')),
           PopupMenuItem(
             value: 'collapse',
             child: Text(card.collapsed ? '展开' : '折叠'),
@@ -193,6 +199,22 @@ class CanvasCard extends StatelessWidget {
             ],
           ),
         ),
+        if (commentCount > 0) ...[
+          Icon(
+            Icons.mode_comment_outlined,
+            size: 12,
+            color: k.cardBody.withValues(alpha: 0.75),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '$commentCount',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: k.cardBody.withValues(alpha: 0.75),
+              fontSize: 10.5,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
         if (card.body.isNotEmpty)
           InkWell(
             onTap: onToggleCollapse,

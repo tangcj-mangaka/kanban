@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/canvas/board_canvas_page.dart';
+import 'ui/card/card_detail_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
 void main() {
@@ -46,16 +47,41 @@ class _PreviewApp extends ConsumerWidget {
   }
 }
 
-class _FirstBoardCanvas extends ConsumerWidget {
+/// `--dart-define=OPEN=detail` 时自动打开第一张卡片的详情弹窗。
+///
+/// 弹窗藏在两次点击之后，截图验证时没法自动点。
+const _autoOpen = String.fromEnvironment('OPEN');
+
+class _FirstBoardCanvas extends ConsumerStatefulWidget {
   const _FirstBoardCanvas();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_FirstBoardCanvas> createState() => _FirstBoardCanvasState();
+}
+
+class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
+  bool _opened = false;
+
+  @override
+  Widget build(BuildContext context) {
     final boards = ref.watch(boardSummariesProvider).value;
     if (boards == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (boards.isEmpty) return const BoardListPage();
-    return BoardCanvasPage(boardId: boards.first.board.id);
+
+    final boardId = boards.first.board.id;
+    if (_autoOpen.isNotEmpty && !_opened) {
+      final cards = ref.watch(canvasCardsProvider(boardId)).value;
+      if (cards != null && cards.isNotEmpty) {
+        _opened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showCardDetail(context, boardId, cards.first.id);
+        });
+      }
+    }
+
+    return BoardCanvasPage(boardId: boardId);
   }
 }

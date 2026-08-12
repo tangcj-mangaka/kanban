@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/palette.dart';
 
-/// 问一个看板名字。返回 null 表示用户取消。
-Future<String?> promptBoardName(
+/// 问一个名字（看板、标签都用它）。返回 null 表示用户取消。
+Future<String?> promptName(
   BuildContext context, {
   required String title,
   String initial = '',
@@ -19,7 +19,7 @@ Future<String?> promptBoardName(
         child: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '看板名称'),
+          decoration: const InputDecoration(hintText: '名称'),
           onSubmitted: (v) => Navigator.pop(context, v.trim()),
         ),
       ),

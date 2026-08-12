@@ -57,7 +57,7 @@ class _BoardListPageState extends ConsumerState<BoardListPage> {
   }
 
   Future<void> _createBoard() async {
-    final name = await promptBoardName(context, title: '新建看板');
+    final name = await promptName(context, title: '新建看板');
     if (name == null) return;
     await ref.read(repositoryProvider).createBoard(name: name);
   }
@@ -428,7 +428,7 @@ class _BoardMenu extends ConsumerWidget {
     final repo = ref.read(repositoryProvider);
     switch (action) {
       case 'rename':
-        final name = await promptBoardName(
+        final name = await promptName(
           context,
           title: '重命名看板',
           initial: board.name,

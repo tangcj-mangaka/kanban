@@ -187,6 +187,55 @@ void main() {
     });
   });
 
+  group('评论', () {
+    test('按发表时间正序排列', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final cardId = await repo.createCard(boardId: boardId, x: 0, y: 0);
+
+      await repo.addComment(boardId, cardId, '第一条');
+      await Future<void>.delayed(const Duration(milliseconds: 3));
+      await repo.addComment(boardId, cardId, '第二条');
+
+      final comments = await repo.watchComments(cardId).first;
+      expect(comments.map((c) => c.body), ['第一条', '第二条']);
+    });
+
+    test('删除走墓碑，不再出现在列表里', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final cardId = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      final id = await repo.addComment(boardId, cardId, '要删的');
+      await repo.deleteComment(boardId, id);
+
+      expect(await repo.watchComments(cardId).first, isEmpty);
+    });
+
+    test('评论数按卡片归组，删掉的不计入', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final a = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      final b = await repo.createCard(boardId: boardId, x: 0, y: 0);
+
+      await repo.addComment(boardId, a, '一');
+      await repo.addComment(boardId, a, '二');
+      final toDelete = await repo.addComment(boardId, b, '三');
+      await repo.deleteComment(boardId, toDelete);
+
+      final counts = await repo.watchCommentCounts(boardId).first;
+      expect(counts[a], 2);
+      expect(counts[b], isNull, reason: '评论删光的卡片不该出现在计数里');
+    });
+
+    test('评论跟着卡片走，不与别的卡片串', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final a = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      final b = await repo.createCard(boardId: boardId, x: 0, y: 0);
+
+      await repo.addComment(boardId, a, '给 A 的');
+
+      expect((await repo.watchComments(a).first).single.body, '给 A 的');
+      expect(await repo.watchComments(b).first, isEmpty);
+    });
+  });
+
   group('看板', () {
     test('删看板走墓碑，从列表里消失', () async {
       final boardId = await repo.createBoard(name: '要删的');
