@@ -1,0 +1,49 @@
+name: Windows 构建
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: 拉依赖
+        working-directory: packages/app
+        run: flutter pub get
+
+      - name: 静态检查
+        working-directory: packages/app
+        run: flutter analyze
+
+      - name: 单元测试
+        working-directory: packages/app
+        run: flutter test
+
+      - name: 构建 Windows Release
+        working-directory: packages/app
+        run: flutter build windows --release
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanban-windows
+          path: packages/app/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 30

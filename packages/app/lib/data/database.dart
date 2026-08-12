@@ -1,0 +1,307 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart';
+import 'package:drift_flutter/drift_flutter.dart';
+import 'package:shared/shared.dart';
+import 'package:uuid/uuid.dart';
+
+import 'tables.dart';
+
+part 'database.g.dart';
+
+const _uuid = Uuid();
+
+/// 比较两条 op 的生效先后。正数表示 [a] 更新，应当覆盖 [b]。
+///
+/// 定序规则分三种情况：
+/// - 两条都已被服务端确认 → 比 seq，这是唯一权威的全局顺序
+/// - 两条都未确认 → 比 localSeq，即本机的产生顺序
+/// - 一确认一未确认 → **未确认的赢**
+///
+/// 第三条是本地优先的直接体现：服务端还没表态之前，本机刚做的修改
+/// 就是本地最新的认知，必须立刻生效，不能被一条旧的已确认 op 压住。
+/// 等服务端回填 seq 之后，顺序会按第一条规则重新裁定。
+int compareOpOrder(int? aSeq, int aLocal, int? bSeq, int bLocal) {
+  if (aSeq != null && bSeq != null) return aSeq.compareTo(bSeq);
+  if (aSeq == null && bSeq == null) return aLocal.compareTo(bLocal);
+  return aSeq == null ? 1 : -1;
+}
+
+@DriftDatabase(
+  tables: [Ops, FieldSeqs, Boards, Tags, Cards, CardTags, Attachments, Comments],
+)
+class AppDatabase extends _$AppDatabase {
+  AppDatabase([QueryExecutor? executor])
+    : super(executor ?? driftDatabase(name: 'kanban'));
+
+  /// 本机标识，用于区分 op 的来源设备。
+  ///
+  /// P1 里只有一台设备，先用固定值；P2 配对时换成持久化的真实 device id。
+  String deviceId = 'local';
+
+  @override
+  int get schemaVersion => 1;
+
+  // -------------------------------------------------------------------------
+  // 字段名 → 列对象的映射
+  //
+  // op 里的字段名是字符串，落到 SQL 要变成列名。这里不硬编码列名字符串，
+  // 而是直接引用 drift 生成的列对象——写错字段名是编译错误，不是运行时
+  // 才炸出来的问题。列的真实 SQL 名和类型也都从对象上取，不会写歪。
+  // -------------------------------------------------------------------------
+
+  late final Map<String, TableInfo<Table, dynamic>> _tables = {
+    Entity.board: boards,
+    Entity.tag: tags,
+    Entity.card: cards,
+    Entity.cardTag: cardTags,
+    Entity.attachment: attachments,
+    Entity.comment: comments,
+  };
+
+  late final Map<String, Map<String, GeneratedColumn<Object>>> _columns = {
+    Entity.board: {
+      BoardF.name: boards.name,
+      BoardF.color: boards.color,
+      BoardF.sortOrder: boards.sortOrder,
+      BoardF.createdAt: boards.createdAt,
+      BoardF.deleted: boards.deleted,
+    },
+    Entity.tag: {
+      TagF.name: tags.name,
+      TagF.color: tags.color,
+      TagF.sortOrder: tags.sortOrder,
+      TagF.deleted: tags.deleted,
+    },
+    Entity.card: {
+      CardF.title: cards.title,
+      CardF.body: cards.body,
+      CardF.color: cards.color,
+      CardF.x: cards.x,
+      CardF.y: cards.y,
+      CardF.width: cards.width,
+      CardF.z: cards.z,
+      CardF.collapsed: cards.collapsed,
+      CardF.archived: cards.archived,
+      CardF.createdAt: cards.createdAt,
+      CardF.updatedAt: cards.updatedAt,
+      CardF.deleted: cards.deleted,
+    },
+    Entity.cardTag: {CardTagF.deleted: cardTags.deleted},
+    Entity.attachment: {
+      AttachmentF.cardId: attachments.cardId,
+      AttachmentF.hash: attachments.hash,
+      AttachmentF.thumbHash: attachments.thumbHash,
+      AttachmentF.filename: attachments.filename,
+      AttachmentF.size: attachments.size,
+      AttachmentF.mime: attachments.mime,
+      AttachmentF.createdAt: attachments.createdAt,
+      AttachmentF.deleted: attachments.deleted,
+    },
+    Entity.comment: {
+      CommentF.cardId: comments.cardId,
+      CommentF.body: comments.body,
+      CommentF.createdAt: comments.createdAt,
+      CommentF.deleted: comments.deleted,
+    },
+  };
+
+  /// 一行刚被创建时必须填上的列。
+  ///
+  /// op 是一条一条到的，某个字段的 op 还没来时这一行也得能以合法状态存在，
+  /// 所以物化表除主键外全都有默认值。这里只补那些没有默认值、又无法从
+  /// 后续 op 推出来的列。
+  Map<GeneratedColumn<Object>, Object?> _seedColumns(Op op) {
+    switch (op.entity) {
+      case Entity.board:
+        return {boards.id: op.entityId};
+      case Entity.tag:
+        return {tags.id: op.entityId, tags.boardId: op.boardId};
+      case Entity.card:
+        return {cards.id: op.entityId, cards.boardId: op.boardId};
+      case Entity.cardTag:
+        // 关系 ID 是 `cardId:tagId` 拼出来的，两端直接拆出来即可，
+        // 不必为 card_id / tag_id 各发一条 op。
+        final sep = op.entityId.indexOf(':');
+        return {
+          cardTags.id: op.entityId,
+          cardTags.cardId: op.entityId.substring(0, sep),
+          cardTags.tagId: op.entityId.substring(sep + 1),
+        };
+      case Entity.attachment:
+        return {attachments.id: op.entityId};
+      case Entity.comment:
+        return {comments.id: op.entityId};
+      default:
+        throw ArgumentError('未知实体类型：${op.entity}');
+    }
+  }
+
+  /// 把 JSON 解出来的值转成该列能直接绑定的形式。
+  ///
+  /// JSON 里整数 0 和浮点 0.0 无法区分，所以 real 列要显式转 double；
+  /// bool 在 SQLite 里存成 0/1。
+  Object? _coerce(GeneratedColumn<Object> column, Object? value) {
+    if (value == null) return null;
+    return switch (column.type) {
+      DriftSqlType.string => value as String,
+      DriftSqlType.int => (value as num).toInt(),
+      DriftSqlType.double => (value as num).toDouble(),
+      DriftSqlType.bool => (value == true || value == 1) ? 1 : 0,
+      _ => throw ArgumentError('列 ${column.name} 的类型暂不支持：${column.type}'),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 应用 op
+  // -------------------------------------------------------------------------
+
+  /// 应用一条 op，返回它是否真的生效。
+  ///
+  /// 返回 false 有两种情况：这条 op 之前已经处理过（按 opId 去重），
+  /// 或者该字段上已经有一条定序更靠后的 op 说了算——乱序到达的 op
+  /// 会在这里被正确地丢弃，而不是把新值覆盖回旧值。
+  Future<bool> applyOp(Op op) {
+    return transaction(() async {
+      final dup =
+          await (select(ops)..where((o) => o.opId.equals(op.opId))).getSingleOrNull();
+      if (dup != null) return false;
+
+      // 远程 op 也要拿一个本地序号：它自己的 seq 已经定了全局顺序，
+      // localSeq 只是让本地待发队列和它排在同一个尺子上。
+      final localSeq = await _nextLocalSeq();
+
+      await into(ops).insert(
+        OpsCompanion.insert(
+          opId: op.opId,
+          seq: Value(op.seq),
+          localSeq: localSeq,
+          boardId: op.boardId,
+          entity: op.entity,
+          entityId: op.entityId,
+          field: op.field,
+          valueJson: jsonEncode(op.value),
+          deviceId: op.deviceId,
+          wallTs: op.wallTs,
+        ),
+      );
+
+      final current = await (select(fieldSeqs)
+            ..where((f) => f.entityId.equals(op.entityId) & f.field.equals(op.field)))
+          .getSingleOrNull();
+
+      if (current != null &&
+          compareOpOrder(op.seq, localSeq, current.seq, current.localSeq) <= 0) {
+        return false;
+      }
+
+      await _writeField(op);
+
+      await into(fieldSeqs).insertOnConflictUpdate(
+        FieldSeqsCompanion.insert(
+          entityId: op.entityId,
+          field: op.field,
+          seq: Value(op.seq),
+          localSeq: localSeq,
+        ),
+      );
+
+      return true;
+    });
+  }
+
+  Future<int> _nextLocalSeq() async {
+    final row = await customSelect(
+      'SELECT COALESCE(MAX(local_seq), 0) + 1 AS next FROM ${ops.actualTableName}',
+      readsFrom: {ops},
+    ).getSingle();
+    return row.read<int>('next');
+  }
+
+  /// 把 op 的值写进物化表，行不存在就先建出来。
+  Future<void> _writeField(Op op) async {
+    final table = _tables[op.entity];
+    final column = _columns[op.entity]?[op.field];
+    if (table == null || column == null) {
+      throw ArgumentError('未知字段：${op.entity}.${op.field}');
+    }
+
+    // 建行用的列 + 本次要写的列。两者可能重叠（比如 seed 里已经带了这一列），
+    // 重叠时以 op 的值为准，不能在 INSERT 里把同一列写两遍。
+    final values = <String, Object?>{
+      for (final e in _seedColumns(op).entries) e.key.name: e.value,
+      column.name: _coerce(column, op.value),
+    };
+
+    final cols = values.keys.join(', ');
+    final placeholders = List.filled(values.length, '?').join(', ');
+    final pk = table.$primaryKey.map((c) => c.name).join(', ');
+
+    await customStatement(
+      'INSERT INTO ${table.actualTableName} ($cols) VALUES ($placeholders) '
+      'ON CONFLICT($pk) DO UPDATE SET '
+      '${column.name} = excluded.${column.name}',
+      values.values.toList(),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 产生本地 op
+  // -------------------------------------------------------------------------
+
+  /// 产生并应用一条本地修改。
+  ///
+  /// P1 里所有 op 都停在未确认状态（seq 为 null），排序退化成纯 localSeq；
+  /// P2 接上服务端后，这些 op 会被推送上去并回填 seq，这里一行不用改。
+  Future<void> emit({
+    required String boardId,
+    required String entity,
+    required String entityId,
+    required String field,
+    required Object? value,
+  }) {
+    return applyOp(
+      Op(
+        opId: _uuid.v4(),
+        boardId: boardId,
+        entity: entity,
+        entityId: entityId,
+        field: field,
+        value: value,
+        deviceId: deviceId,
+        wallTs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  /// 一次性提交一批修改。
+  ///
+  /// 「清空干草仓库」这类操作可能涉及几百张卡片，必须打包成一个事务，
+  /// 到 P2 也要打包成一条同步消息，不能一条一条发。
+  Future<void> emitBatch(List<({String field, Object? value})> changes, {
+    required String boardId,
+    required String entity,
+    required String entityId,
+  }) {
+    return transaction(() async {
+      for (final c in changes) {
+        await emit(
+          boardId: boardId,
+          entity: entity,
+          entityId: entityId,
+          field: c.field,
+          value: c.value,
+        );
+      }
+    });
+  }
+
+  /// 尚未同步到服务端的 op，按本地顺序排列。
+  ///
+  /// P2 重连后按这个顺序补发。
+  Future<List<OpRow>> pendingOps() =>
+      (select(ops)
+            ..where((o) => o.seq.isNull())
+            ..orderBy([(o) => OrderingTerm.asc(o.localSeq)]))
+          .get();
+}
