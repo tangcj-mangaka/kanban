@@ -24,6 +24,18 @@ jobs:
           channel: stable
           cache: true
 
+      - name: 拉依赖（shared）
+        working-directory: packages/shared
+        run: dart pub get
+
+      - name: 静态检查（shared）
+        working-directory: packages/shared
+        run: dart analyze
+
+      - name: 单元测试（shared）
+        working-directory: packages/shared
+        run: dart test
+
       - name: 拉依赖
         working-directory: packages/app
         run: flutter pub get

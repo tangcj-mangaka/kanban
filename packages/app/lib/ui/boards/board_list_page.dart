@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
 
 import '../../data/database.dart';
 import '../../data/repository.dart';
@@ -177,10 +178,23 @@ class _ConnectionChip extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 
-class _BoardGrid extends StatelessWidget {
+/// 看板网格，支持拖动重排。
+///
+/// Flutter 自带的 ReorderableListView 只支持列表，不支持网格，所以这里用
+/// Draggable + DragTarget 自己拼。落位时只改被拖那一块的 sortOrder，
+/// 取前后邻居的中点——其他看板一个都不动。
+class _BoardGrid extends ConsumerStatefulWidget {
   final List<BoardSummary> boards;
 
   const _BoardGrid({required this.boards});
+
+  @override
+  ConsumerState<_BoardGrid> createState() => _BoardGridState();
+}
+
+class _BoardGridState extends ConsumerState<_BoardGrid> {
+  String? _draggingId;
+  int? _hoverIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -192,9 +206,88 @@ class _BoardGrid extends StatelessWidget {
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
-      itemCount: boards.length,
-      itemBuilder: (context, i) => _BoardTile(summary: boards[i]),
+      itemCount: widget.boards.length,
+      itemBuilder: (context, i) {
+        final summary = widget.boards[i];
+        final isDragging = summary.board.id == _draggingId;
+
+        return DragTarget<String>(
+          onWillAcceptWithDetails: (d) {
+            if (d.data == summary.board.id) return false;
+            setState(() => _hoverIndex = i);
+            return true;
+          },
+          onLeave: (_) => setState(() => _hoverIndex = null),
+          onAcceptWithDetails: (d) {
+            setState(() => _hoverIndex = null);
+            _reorder(d.data, i);
+          },
+          builder: (context, candidate, _) => LayoutBuilder(
+            builder: (context, constraints) {
+              final tile = _BoardTile(summary: summary);
+              final showDropHint = _hoverIndex == i && candidate.isNotEmpty;
+
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: Draggable<String>(
+                      data: summary.board.id,
+                      onDragStarted: () =>
+                          setState(() => _draggingId = summary.board.id),
+                      onDragEnd: (_) => _clearDrag(),
+                      onDraggableCanceled: (_, _) => _clearDrag(),
+                      // 浮动预览不受父级约束，得自己给尺寸，否则会塌成内容宽度。
+                      feedback: SizedBox(
+                        width: constraints.maxWidth,
+                        height: constraints.maxHeight,
+                        child: Opacity(opacity: 0.9, child: tile),
+                      ),
+                      childWhenDragging: Opacity(opacity: 0.25, child: tile),
+                      child: Opacity(opacity: isDragging ? 0.25 : 1, child: tile),
+                    ),
+                  ),
+                  if (showDropHint)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
+  }
+
+  void _clearDrag() => setState(() {
+    _draggingId = null;
+    _hoverIndex = null;
+  });
+
+  void _reorder(String draggedId, int targetIndex) {
+    final boards = widget.boards;
+    final origIndex = boards.indexWhere((b) => b.board.id == draggedId);
+    if (origIndex < 0 || origIndex == targetIndex) return;
+
+    final n = reorderNeighbors(
+      [for (final b in boards) b.board.sortOrder],
+      origIndex,
+      targetIndex,
+    );
+
+    ref
+        .read(repositoryProvider)
+        .reorderBoard(draggedId, before: n.before, after: n.after);
   }
 }
 

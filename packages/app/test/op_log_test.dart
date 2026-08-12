@@ -198,25 +198,4 @@ void main() {
       expect(c.deleted, isFalse);
     });
   });
-
-  group('小数序', () {
-    test('往中间插只改一条记录的一个字段', () {
-      expect(fractionalIndex(before: 1, after: 2), 1.5);
-      expect(fractionalIndex(before: null, after: 1), 0);
-      expect(fractionalIndex(before: 1, after: null), 2);
-      expect(fractionalIndex(), 0);
-    });
-
-    test('反复往同一条缝里插，最终会触到需要重排的阈值', () {
-      var lo = 0.0;
-      const hi = 1.0;
-      var steps = 0;
-      while (!needsRebalance(lo, hi) && steps < 200) {
-        lo = fractionalIndex(before: lo, after: hi);
-        steps++;
-      }
-      expect(needsRebalance(lo, hi), isTrue);
-      expect(steps, lessThan(200), reason: '应当在有限步内触发重排');
-    });
-  });
 }

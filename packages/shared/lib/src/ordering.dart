@@ -36,6 +36,29 @@ bool needsRebalance(double a, double b) => (b - a).abs() < kOrderEpsilon;
 List<double> rebalance(int count) =>
     List<double>.generate(count, (i) => i.toDouble());
 
+/// 把 [orders] 里第 [fromIndex] 个元素拖到第 [toIndex] 个位置后，它应当落在
+/// 哪两个序号之间。返回值直接喂给 [fractionalIndex]。
+///
+/// 抽成纯函数是因为这里的下标换算最容易出 off-by-one：被拖的元素要先从
+/// 列表里摘掉，剩下元素的下标就整体前移了。往右拖时落在目标之后、往左拖时
+/// 落在目标之前——摘掉之后两种情况的插入位置恰好都等于 [toIndex]，
+/// 所以不需要分支。
+({double? before, double? after}) reorderNeighbors(
+  List<double> orders,
+  int fromIndex,
+  int toIndex,
+) {
+  if (fromIndex < 0 || fromIndex >= orders.length) {
+    return (before: null, after: null);
+  }
+  final rest = [...orders]..removeAt(fromIndex);
+  final at = toIndex.clamp(0, rest.length);
+  return (
+    before: at > 0 ? rest[at - 1] : null,
+    after: at < rest.length ? rest[at] : null,
+  );
+}
+
 /// 卡片与标签的关系 ID，由两端 ID 直接拼出。
 ///
 /// 必须是确定性的：两台设备各自给同一张卡片打上同一个标签时，产生的是
