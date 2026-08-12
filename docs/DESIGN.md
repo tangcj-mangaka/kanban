@@ -550,13 +550,37 @@ Material 3 设计体系，但**使用固定的种子色**而不是跟随系统�
 
 ```
 kanban/
+├── .github/workflows/ # Windows 云端构建
 ├── packages/
 │   ├── shared/        # 数据模型 + 同步协议定义（客户端服务端共用）
 │   ├── app/           # Flutter 客户端（Windows + Android）
 │   └── server/        # Dart 服务端
+├── design/            # 设计资产
 └── docs/
     └── DESIGN.md
 ```
+
+### 8.3 开发与构建的分工
+
+**开发在 macOS 上做，Windows 的 `.exe` 由 GitHub Actions 云端产出。**
+
+Flutter 不能在 macOS 上编译 Windows 桌面应用——依赖 MSVC 工具链，且不存在交叉编译方案。但这只是出包的限制：P1 的全部内容（画布、卡片、标签、分组视图、干草仓库、SQLite）都是平台无关的，macOS 桌面版就是完整的开发靶子。P2 的服务端是纯 Dart，在 macOS 上原生就能跑，Mac 客户端 ↔ Mac 服务端可以验证整套同步逻辑。
+
+| 环节 | 在哪做 |
+|---|---|
+| 写代码、静态检查、单元测试 | Mac |
+| 跑起来看效果、调交互 | Mac（`flutter run -d macos`） |
+| 同步逻辑联调（P2） | Mac（客户端和服务端都在本机） |
+| 出 Windows 包 | GitHub Actions（`windows-latest`） |
+| 托盘常驻 / 开机自启 / 防火墙（P2） | **必须在 Windows 实机验证** |
+
+**需要在 Windows 上实测一次的清单**（出包后逐项过）：
+
+- 中文默认字体（微软雅黑）下的行高与字重观感
+- 滚动惯性、触控板手势
+- 快捷键从 `Cmd` 换到 `Ctrl` 后有无冲突
+- 窗口标题栏样式、应用数据目录位置
+- 多显示器 / 高 DPI 缩放下的画布表现
 
 ---
 

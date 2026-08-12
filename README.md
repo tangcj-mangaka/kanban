@@ -15,23 +15,35 @@
 
 ## 开发环境
 
-**app 在 Windows 笔记本上编译和运行。** Mac 这边只写代码和跑静态检查——Flutter 无法在 macOS 上编译 Windows 桌面应用，这是硬限制。
+**在 Mac 上开发，Windows 的 `.exe` 由 GitHub Actions 云端构建。** 不需要任何 Windows 开发环境。
 
-### Windows 笔记本首次准备
+Flutter 无法在 macOS 上编译 Windows 桌面应用（依赖 MSVC 工具链，且不存在交叉编译方案）。但这只是**出包**的限制——P1 的全部内容都是平台无关的，在 macOS 桌面版上开发和验证即可。
 
-1. 装 [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
-2. 装 Visual Studio 2022，勾选「使用 C++ 的桌面开发」工作负载（Windows 桌面构建必需）
-3. 验证环境：
+### 日常开发（Mac）
 
 ```bash
-flutter doctor
+cd packages/app && flutter run -d macos
 ```
-
-### 跑起来
 
 ```bash
-flutter run -d windows
+cd packages/app && flutter analyze
 ```
+
+### 拿 Windows 版
+
+push 到 `main` 后，GitHub Actions 自动构建。到仓库的 **Actions** 页面下载 `kanban-windows` 产物，解压双击 `kanban.exe` 即可运行，目标机器不需要装任何东西。
+
+也可以在 Actions 页面手动触发（`Run workflow`）。
+
+### 已知的平台差异
+
+在 macOS 上开发、最终跑在 Windows，以下地方需要在出包后实机确认一次：
+
+- 中文默认字体不同（苹方 vs 微软雅黑），行高与字重观感有差异
+- 滚动惯性、触控板手势
+- 快捷键 `Cmd` / `Ctrl`
+- 窗口标题栏样式、应用数据目录位置
+- **P2 的托盘常驻和开机自启是 Windows 专属能力，Mac 上无法验证**，到那个阶段需要在 Windows 机器上实测
 
 ## 工程结构
 
