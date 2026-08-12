@@ -24,11 +24,31 @@ void main() {
   runApp(const ProviderScope(child: _PreviewApp()));
 }
 
-class _PreviewApp extends ConsumerWidget {
+class _PreviewApp extends ConsumerStatefulWidget {
   const _PreviewApp();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PreviewApp> createState() => _PreviewAppState();
+}
+
+class _PreviewAppState extends ConsumerState<_PreviewApp> {
+  @override
+  void initState() {
+    super.initState();
+    if (_syncHost.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final client = ref.read(syncClientProvider);
+        await client.configure(
+          host: _syncHost,
+          port: _syncPort,
+          pairCode: _syncCode.isEmpty ? null : _syncCode,
+        );
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: '驴看板（画布预览）',
       debugShowCheckedModeBanner: false,
@@ -54,6 +74,13 @@ const _autoOpen = String.fromEnvironment('OPEN');
 
 /// `--dart-define=VIEW=grouped|haystack` 时直接停在那个视图。
 const _initialView = String.fromEnvironment('VIEW');
+
+/// `--dart-define=SYNC_HOST=... --dart-define=SYNC_CODE=...` 时启动即配对。
+///
+/// 手动填地址和配对码要点好几下，截图验证时没法自动点。
+const _syncHost = String.fromEnvironment('SYNC_HOST');
+const _syncPort = int.fromEnvironment('SYNC_PORT', defaultValue: 8765);
+const _syncCode = String.fromEnvironment('SYNC_CODE');
 
 class _FirstBoardCanvas extends ConsumerStatefulWidget {
   const _FirstBoardCanvas();

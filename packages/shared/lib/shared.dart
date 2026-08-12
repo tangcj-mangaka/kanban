@@ -4,6 +4,7 @@
 /// 永远一致——协议改了，两边一起改，不会漏。
 library;
 
+export 'src/connect_link.dart';
 export 'src/op.dart';
 export 'src/protocol.dart';
 export 'src/ordering.dart';

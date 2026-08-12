@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers.dart';
+import 'package:shared/shared.dart';
+
+import '../../sync/discovery_listener.dart';
 import '../../sync/sync_client.dart';
 import '../theme/app_theme.dart';
 
@@ -26,6 +29,7 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
   final _portController = TextEditingController(text: '8765');
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
+  final _linkController = TextEditingController();
   bool _loaded = false;
   bool _connecting = false;
 
@@ -50,6 +54,7 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
     _portController.dispose();
     _codeController.dispose();
     _nameController.dispose();
+    _linkController.dispose();
     super.dispose();
   }
 
@@ -75,6 +80,23 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _StatusLine(state: state),
+                  const SizedBox(height: 18),
+                  _DiscoveredServers(onPick: _fill),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _linkController,
+                          decoration: const InputDecoration(
+                            hintText: '或粘贴连接链接 kanban://connect?...',
+                            isDense: true,
+                          ),
+                          onChanged: _onLinkChanged,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 18),
                   Text(
                     '服务器地址',
@@ -174,6 +196,24 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
     );
   }
 
+  /// 用户选了一台发现到的服务端，或粘贴了链接。
+  void _fill(String host, int port, {String? code}) {
+    setState(() {
+      _hostController.text = host;
+      _portController.text = '$port';
+      if (code != null) _codeController.text = code;
+    });
+  }
+
+  /// 粘贴链接时即时解析。解析不出来就当没粘——用户可能只是粘错了东西，
+  /// 不该弹错误框骂他。
+  void _onLinkChanged(String raw) {
+    final link = ConnectLink.parse(raw);
+    if (link == null) return;
+    _fill(link.host, link.port, code: link.code);
+    _linkController.clear();
+  }
+
   Future<void> _connect() async {
     final host = _hostController.text.trim();
     if (host.isEmpty) return;
@@ -256,6 +296,104 @@ class _StatusLine extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+/// 局域网里自动发现的服务端。
+class _DiscoveredServers extends ConsumerWidget {
+  final void Function(String host, int port) onPick;
+
+  const _DiscoveredServers({required this.onPick});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final k = theme.kanban;
+    final async = ref.watch(discoveredServersProvider);
+    final servers = async.value ?? const <DiscoveredServer>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              '局域网里的服务端',
+              style: theme.textTheme.labelLarge?.copyWith(color: k.cardBody),
+            ),
+            const SizedBox(width: 8),
+            if (servers.isEmpty)
+              SizedBox(
+                width: 11,
+                height: 11,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: k.cardBody.withValues(alpha: 0.6),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (servers.isEmpty)
+          Text(
+            '正在搜索。找不到也没关系，下面手动填地址一样能连。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: k.cardBody.withValues(alpha: 0.8),
+            ),
+          )
+        else
+          for (final server in servers)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Material(
+                color: k.hairline.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  onTap: () => onPick(server.host, server.port),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.dns_outlined, size: 16, color: k.cardBody),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                server.name,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                '${server.host}:${server.port}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: k.cardBody,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '选它',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      ],
     );
   }
 }

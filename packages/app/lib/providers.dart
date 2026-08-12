@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/database.dart';
 import 'data/repository.dart';
+import 'sync/discovery_listener.dart';
 import 'sync/sync_client.dart';
 
 /// 数据库单例。整个进程只开一个连接。
@@ -30,6 +31,18 @@ final syncClientProvider = Provider<SyncClient>((ref) {
 final syncStateProvider = StreamProvider<SyncState>(
   (ref) => ref.watch(syncClientProvider).stateStream,
 );
+
+/// 局域网里发现的服务端。
+///
+/// 只在设置页打开时才监听——常驻监听一个 UDP 端口没必要，
+/// 而且在有些系统上会触发防火墙询问。
+final discoveredServersProvider =
+    StreamProvider.autoDispose<List<DiscoveredServer>>((ref) {
+      final listener = DiscoveryListener();
+      ref.onDispose(listener.dispose);
+      unawaited(listener.start());
+      return listener.stream;
+    });
 
 /// 看板列表。drift 的响应式查询——底层数据一变，这里自动重新发出。
 final boardSummariesProvider = StreamProvider<List<BoardSummary>>(
