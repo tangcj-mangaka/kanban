@@ -8,6 +8,7 @@ import '../../providers.dart';
 import '../format.dart';
 import '../theme/app_theme.dart';
 import '../board/board_page.dart';
+import '../sync/sync_status_chip.dart';
 import 'board_dialogs.dart';
 
 /// 看板列表页 —— 应用入口。
@@ -95,7 +96,7 @@ class _Header extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              const _ConnectionChip(),
+              const SyncStatusChip(),
               const Spacer(),
               IconButton(
                 tooltip: switch (mode) {
@@ -128,46 +129,6 @@ class _Header extends ConsumerWidget {
                 hintText: '搜索看板',
                 prefixIcon: Icon(Icons.search, size: 20),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 服务端连接状态。
-///
-/// P1 没有同步，这里恒为「本地模式」。位置先占住——用户任何时候都该
-/// 一眼看出自己现在是不是离线在用。
-class _ConnectionChip extends StatelessWidget {
-  const _ConnectionChip();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: theme.kanban.hairline.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: theme.kanban.cardBody,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '本地模式',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.kanban.cardBody,
             ),
           ),
         ],

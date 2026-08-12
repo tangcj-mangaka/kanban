@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/database.dart';
 import 'data/repository.dart';
+import 'sync/sync_client.dart';
 
 /// 数据库单例。整个进程只开一个连接。
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -13,6 +16,19 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 
 final repositoryProvider = Provider<Repository>(
   (ref) => Repository(ref.watch(databaseProvider)),
+);
+
+/// 同步客户端。进程内单例，随应用启动。
+final syncClientProvider = Provider<SyncClient>((ref) {
+  final client = SyncClient(ref.watch(databaseProvider));
+  ref.onDispose(client.dispose);
+  // 不 await：同步永远不该挡住界面启动。连不上就安静排队。
+  unawaited(client.start());
+  return client;
+});
+
+final syncStateProvider = StreamProvider<SyncState>(
+  (ref) => ref.watch(syncClientProvider).stateStream,
 );
 
 /// 看板列表。drift 的响应式查询——底层数据一变，这里自动重新发出。

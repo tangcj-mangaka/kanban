@@ -185,3 +185,19 @@ class Comments extends Table {
   @override
   Set<Column> get primaryKey => {id};
 }
+
+/// 本机设置：服务器地址、设备身份、同步进度。
+///
+/// 存在同一个 SQLite 里而不是另引一个键值库——这些东西和 op log 一样属于
+/// 「本机状态」，放一起备份和迁移都省事。
+///
+/// 注意这张表**不参与同步**：每台设备的服务器地址、令牌、已同步到哪都
+/// 是自己的事，绝不能广播出去。
+@DataClassName('SettingRow')
+class Settings extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}

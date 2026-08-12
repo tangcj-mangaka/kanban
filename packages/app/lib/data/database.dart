@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -28,7 +29,17 @@ int compareOpOrder(int? aSeq, int aLocal, int? bSeq, int bLocal) {
 }
 
 @DriftDatabase(
-  tables: [Ops, FieldSeqs, Boards, Tags, Cards, CardTags, Attachments, Comments],
+  tables: [
+    Ops,
+    FieldSeqs,
+    Boards,
+    Tags,
+    Cards,
+    CardTags,
+    Attachments,
+    Comments,
+    Settings,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
@@ -40,7 +51,52 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      // v2：加了本机设置表（服务器地址、令牌、同步进度）。
+      if (from < 2) await m.createTable(settings);
+    },
+  );
+
+  /// 本机产生了新 op。同步层据此触发一次推送。
+  ///
+  /// 用广播流而不是让同步层轮询待发队列——用户松手到局域网另一端动起来
+  /// 之间的延迟，不该由轮询间隔决定。
+  Stream<void> get localOpAdded => _localOps.stream;
+  final _localOps = StreamController<void>.broadcast();
+
+  @override
+  Future<void> close() {
+    _localOps.close();
+    return super.close();
+  }
+
+  // -------------------------------------------------------------------------
+  // 本机设置
+  // -------------------------------------------------------------------------
+
+  Future<String?> getSetting(String key) async {
+    final row = await (select(settings)..where((s) => s.key.equals(key)))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setSetting(String key, String? value) async {
+    if (value == null) {
+      await (delete(settings)..where((s) => s.key.equals(key))).go();
+      return;
+    }
+    await into(settings).insertOnConflictUpdate(
+      SettingsCompanion.insert(key: key, value: value),
+    );
+  }
+
+  Future<int> getIntSetting(String key, {int fallback = 0}) async =>
+      int.tryParse(await getSetting(key) ?? '') ?? fallback;
 
   // -------------------------------------------------------------------------
   // 字段名 → 列对象的映射
@@ -335,8 +391,8 @@ class AppDatabase extends _$AppDatabase {
     required String entityId,
     required String field,
     required Object? value,
-  }) {
-    return applyOp(
+  }) async {
+    await applyOp(
       Op(
         opId: _uuid.v4(),
         boardId: boardId,
@@ -348,6 +404,7 @@ class AppDatabase extends _$AppDatabase {
         wallTs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+    if (!_localOps.isClosed) _localOps.add(null);
   }
 
   /// 一次性提交一批修改。
