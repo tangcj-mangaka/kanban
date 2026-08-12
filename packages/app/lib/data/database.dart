@@ -210,6 +210,82 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // 服务端确认
+  // -------------------------------------------------------------------------
+
+  /// 服务端确认了一批 op：回填 seq，并**重放受影响的字段**。
+  ///
+  /// 只回填 seq 是不够的，会丢更新。设想：
+  ///
+  /// 1. 本机待发 op P 改字段 F，已在本地生效
+  /// 2. 另一台设备也改了 F，服务端给它分配 seq = 105
+  /// 3. 本机先收到 105 的广播 → 按「未确认的赢」→ 105 没写进物化表
+  /// 4. 本机随后收到自己的 ACK，P 拿到 seq = 101
+  /// 5. 若只回填 seq，本机会一直认为 P 生效——但正确答案是对方的 105
+  ///
+  /// 之所以能救回来，是因为第 3 步被丢弃的 op **一直存在 op log 里**：
+  /// op log 是真相源，物化表只是读视图。重放就是回到真相源重新求值。
+  Future<void> ackOps(Map<String, int> seqByOpId) {
+    return transaction(() async {
+      final affected = <(String, String)>{};
+
+      for (final entry in seqByOpId.entries) {
+        final row = await (select(ops)..where((o) => o.opId.equals(entry.key)))
+            .getSingleOrNull();
+        if (row == null) continue;
+
+        await (update(ops)..where((o) => o.opId.equals(entry.key))).write(
+          OpsCompanion(seq: Value(entry.value)),
+        );
+        affected.add((row.entityId, row.field));
+      }
+
+      for (final (entityId, field) in affected) {
+        await recomputeField(entityId, field);
+      }
+    });
+  }
+
+  /// 从 op log 重放某个字段，重新裁定赢家并写回物化表。
+  ///
+  /// 增量比较（[applyOp] 里那段）只是快路径；正确性靠「op log 永远完整」
+  /// 加上这里的重放来保证。
+  Future<void> recomputeField(String entityId, String field) async {
+    final rows = await (select(ops)
+          ..where((o) => o.entityId.equals(entityId) & o.field.equals(field)))
+        .get();
+    if (rows.isEmpty) return;
+
+    rows.sort(
+      (a, b) => compareOpOrder(a.seq, a.localSeq, b.seq, b.localSeq),
+    );
+    final winner = rows.last;
+
+    await _writeField(
+      Op(
+        seq: winner.seq,
+        opId: winner.opId,
+        boardId: winner.boardId,
+        entity: winner.entity,
+        entityId: winner.entityId,
+        field: winner.field,
+        value: jsonDecode(winner.valueJson),
+        deviceId: winner.deviceId,
+        wallTs: winner.wallTs,
+      ),
+    );
+
+    await into(fieldSeqs).insertOnConflictUpdate(
+      FieldSeqsCompanion.insert(
+        entityId: entityId,
+        field: field,
+        seq: Value(winner.seq),
+        localSeq: winner.localSeq,
+      ),
+    );
+  }
+
   Future<int> _nextLocalSeq() async {
     final row = await customSelect(
       'SELECT COALESCE(MAX(local_seq), 0) + 1 AS next FROM ${ops.actualTableName}',

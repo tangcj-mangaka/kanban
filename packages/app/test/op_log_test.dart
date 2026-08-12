@@ -172,6 +172,107 @@ void main() {
     });
   });
 
+  group('ACK 回来时重放字段', () {
+    test('复现并修正丢更新：待发 op 压掉的远程 op，确认后必须重新胜出', () async {
+      // 1. 本机待发的修改，本地立刻生效
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.title,
+        value: '本机改的',
+      );
+      final localOp = (await db.pendingOps()).single;
+      expect((await card('c1'))!.title, '本机改的');
+
+      // 2. 远端的修改先到，seq 更大，但按「未确认的赢」被压住
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '远端改的', seq: 105));
+      expect(
+        (await card('c1'))!.title,
+        '本机改的',
+        reason: '服务端表态之前，本机的修改就是本地最新认知',
+      );
+
+      // 3. 自己的 ACK 后到，服务端给的 seq 比远端的小
+      await db.ackOps({localOp.opId: 101});
+
+      // 4. 真相源里 105 > 101，所以远端的才该生效
+      expect(
+        (await card('c1'))!.title,
+        '远端改的',
+        reason: '只回填 seq 不重放的话，这里会一直是本机的值——那就是丢更新',
+      );
+    });
+
+    test('自己的 seq 更大时，确认后仍然是自己的值', () async {
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '远端改的', seq: 100));
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.title,
+        value: '本机改的',
+      );
+      final localOp = (await db.pendingOps()).single;
+
+      await db.ackOps({localOp.opId: 101});
+
+      expect((await card('c1'))!.title, '本机改的');
+    });
+
+    test('确认后 op 离开待发队列', () async {
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.title,
+        value: 'X',
+      );
+      final localOp = (await db.pendingOps()).single;
+
+      await db.ackOps({localOp.opId: 7});
+
+      expect(await db.pendingOps(), isEmpty);
+    });
+
+    test('重放只影响被确认的那个字段', () async {
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.title,
+        value: '标题',
+      );
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.body,
+        value: '正文',
+      );
+      final pending = await db.pendingOps();
+      final titleOp = pending.firstWhere((o) => o.field == CardF.title);
+
+      // 正文上有一条更大 seq 的远程 op 被压着
+      await db.applyOp(mk(Entity.card, 'c1', CardF.body, '远端正文', seq: 900));
+
+      // 只确认标题
+      await db.ackOps({titleOp.opId: 5});
+
+      final c = await card('c1');
+      expect(c!.title, '标题');
+      expect(
+        c.body,
+        '正文',
+        reason: '正文那条没被确认，仍是待发状态，不该被重放掉',
+      );
+    });
+
+    test('未知的 opId 被安静忽略', () async {
+      await db.ackOps({'不存在的 op': 1});
+    });
+  });
+
   group('值的类型', () {
     test('浮点、布尔、null 都能正确往返', () async {
       await db.applyOp(mk(Entity.card, 'c1', CardF.x, 12.5, seq: 1));
