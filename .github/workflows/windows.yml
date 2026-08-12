@@ -36,6 +36,22 @@ jobs:
         working-directory: packages/shared
         run: dart test
 
+      - name: 拉依赖（server）
+        working-directory: packages/server
+        run: dart pub get
+
+      - name: 静态检查（server）
+        working-directory: packages/server
+        run: dart analyze
+
+      - name: 单元测试（server）
+        working-directory: packages/server
+        run: dart test
+
+      - name: 构建服务端
+        working-directory: packages/server
+        run: dart build cli
+
       - name: 拉依赖
         working-directory: packages/app
         run: flutter pub get
@@ -52,10 +68,18 @@ jobs:
         working-directory: packages/app
         run: flutter build windows --release
 
-      - name: 上传产物
+      - name: 上传客户端
         uses: actions/upload-artifact@v4
         with:
           name: kanban-windows
           path: packages/app/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传服务端
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanban-server-windows
+          path: packages/server/build/cli/windows_x64/bundle/
           if-no-files-found: error
           retention-days: 30

@@ -574,7 +574,7 @@ Material 3 设计体系，但**使用固定的种子色**而不是跟随系统�
 | Markdown | flutter_markdown 渲染 + 自定义工具栏 | 见 §8.1 |
 | 服务端 | **Dart + shelf + shelf_web_socket** | 与客户端同语言，模型和协议代码直接复用 |
 | 服务端存储 | sqlite3（Dart 包） | 与客户端同一套 schema |
-| 服务端分发 | `dart compile exe` | **单个 .exe，双击就跑**，Windows 上不用装任何运行时 |
+| 服务端分发 | `dart build cli` | 一个自带依赖的目录，**目标机器不用装任何运行时** |
 
 ### 8.1 关于正文格式
 
@@ -596,7 +596,24 @@ kanban/
     └── DESIGN.md
 ```
 
-### 8.3 开发与构建的分工
+### 8.3 服务端的分发形态
+
+`sqlite3` 3.x 改用了 Dart 的原生构建钩子，**`dart compile exe` 不再支持它**，
+要用 `dart build cli`。产物不是单个可执行文件，而是一个目录：
+
+```
+bundle/
+├── bin/server.exe
+└── lib/sqlite3.dll
+```
+
+也就是说「双击一个 exe 就跑」做不到了，实际形态是**解压一个文件夹、双击里面的
+exe**。对 Windows 应用这完全正常（exe 旁边放一个 DLL 是常态），而且关键的那条
+仍然成立：**目标机器不需要装 Dart、不需要装任何运行时**。
+
+发布时打包成 zip；以后做安装包的话，把这个目录放进去即可。
+
+### 8.4 开发与构建的分工
 
 **开发在 macOS 上做，Windows 的 `.exe` 由 GitHub Actions 云端产出。**
 
@@ -624,7 +641,7 @@ Flutter 不能在 macOS 上编译 Windows 桌面应用——依赖 MSVC 工具�
 
 ### 9.1 服务端形态
 
-`kanban-server.exe` —— 单文件，托盘常驻，开机自启。
+`kanban-server.exe` —— 托盘常驻，开机自启。随 `sqlite3.dll` 一起放在同一个目录里（见 §8.3）。
 
 托盘菜单：
 

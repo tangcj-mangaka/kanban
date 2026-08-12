@@ -40,3 +40,6 @@ app.*.map.json
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
+
+# dart build cli 的产物
+/packages/server/build/

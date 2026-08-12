@@ -52,7 +52,7 @@ kanban/
 ├── packages/
 │   ├── shared/     # 数据模型 + 同步协议定义（客户端服务端共用）
 │   ├── app/        # Flutter 客户端（Windows + Android）
-│   └── server/     # Dart 服务端（局域网同步，P2 阶段）
+│   └── server/     # Dart 服务端（局域网同步）
 ├── design/         # 设计资产
 └── docs/           # 设计文档
 ```
