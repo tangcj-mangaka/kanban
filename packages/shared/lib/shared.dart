@@ -6,3 +6,4 @@ library;
 
 export 'src/op.dart';
 export 'src/ordering.dart';
+export 'src/swatches.dart';

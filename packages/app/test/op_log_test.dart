@@ -1,6 +1,3 @@
-// drift 也导出了一个 isNull（SQL 表达式用），与 matcher 的同名断言冲突。
-// 测试里要的是 matcher 那个。
-import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanban/data/database.dart';
