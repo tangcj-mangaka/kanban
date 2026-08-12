@@ -236,6 +236,35 @@ void main() {
     });
   });
 
+  group('分组视图的列顶新建', () {
+    test('放在所有卡片下方，不会盖住已有的卡', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      await repo.createCard(boardId: boardId, x: 0, y: 100);
+      await repo.createCard(boardId: boardId, x: 0, y: 500);
+
+      final id = await repo.createCardBelowAll(boardId: boardId);
+
+      expect((await card(id)).y, greaterThan(500));
+    });
+
+    test('可以顺带打上那一列的标签', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final tagId = await repo.createTag(boardId: boardId, name: '在读');
+
+      final id = await repo.createCardBelowAll(boardId: boardId, tagId: tagId);
+
+      final rels = await repo.watchCardTags(boardId).first;
+      expect(rels.single.cardId, id);
+      expect(rels.single.tagId, tagId);
+    });
+
+    test('空画布时也能建', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCardBelowAll(boardId: boardId);
+      expect((await card(id)).y, 40);
+    });
+  });
+
   group('看板', () {
     test('删看板走墓碑，从列表里消失', () async {
       final boardId = await repo.createBoard(name: '要删的');

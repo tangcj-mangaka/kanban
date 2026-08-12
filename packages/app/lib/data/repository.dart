@@ -211,6 +211,34 @@ class Repository {
     return id;
   }
 
+  /// 在画布现有卡片的下方新建一张，可选地直接打上一个标签。
+  ///
+  /// 供分组视图的列顶「+」用：那里没有画布上的位置感，但卡片终究要有个
+  /// 坐标，所以放在所有卡片下面——不会盖住任何已有的卡。
+  Future<String> createCardBelowAll({
+    required String boardId,
+    String? tagId,
+    String title = '',
+  }) async {
+    final cards = await (db.select(db.cards)..where(
+          (c) =>
+              c.boardId.equals(boardId) &
+              c.deleted.equals(false) &
+              c.archived.equals(false),
+        ))
+        .get();
+
+    final y = cards.isEmpty
+        ? 40.0
+        : cards.map((c) => c.y).reduce((a, b) => a > b ? a : b) + 170;
+
+    final id = await createCard(boardId: boardId, x: 40, y: y, title: title);
+    if (tagId != null) {
+      await setCardTag(boardId, id, tagId, on: true);
+    }
+    return id;
+  }
+
   /// 改卡片的一个字段，并顺手把 updatedAt 推到现在。
   ///
   /// [touch] 为 false 时不动 updatedAt——纯粹挪位置、调宽度、改层级这类

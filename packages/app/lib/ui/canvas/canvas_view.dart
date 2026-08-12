@@ -9,7 +9,6 @@ import '../../providers.dart';
 import '../boards/board_dialogs.dart';
 import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
-import '../tags/tag_manager_panel.dart';
 import '../theme/app_theme.dart';
 import 'canvas_card.dart';
 import 'canvas_transform.dart';
@@ -18,16 +17,19 @@ import 'grid_painter.dart';
 /// 画布视图 —— 唯一的编辑主场。
 ///
 /// 卡片在这里自由摆放；分组视图只是同一批卡片的另一种呈现，不能拖。
-class BoardCanvasPage extends ConsumerStatefulWidget {
+///
+/// 只负责自己的内容和工具条，返回按钮、看板名、视图切换都在外层的
+/// [BoardPage] 里。
+class CanvasView extends ConsumerStatefulWidget {
   final String boardId;
 
-  const BoardCanvasPage({super.key, required this.boardId});
+  const CanvasView({super.key, required this.boardId});
 
   @override
-  ConsumerState<BoardCanvasPage> createState() => _BoardCanvasPageState();
+  ConsumerState<CanvasView> createState() => _CanvasViewState();
 }
 
-class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
+class _CanvasViewState extends ConsumerState<CanvasView> {
   CanvasTransform _t = const CanvasTransform();
 
   // 平移画布
@@ -64,7 +66,6 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final board = ref.watch(boardProvider(widget.boardId)).value;
     final cards = ref.watch(canvasCardsProvider(widget.boardId)).value ?? const [];
     final tags = ref.watch(boardTagsProvider(widget.boardId)).value ?? const [];
     final cardTags = ref.watch(cardTagMapProvider(widget.boardId)).value ?? const {};
@@ -72,62 +73,56 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
     final tagById = {for (final t in tags) t.id: t};
 
-    return Scaffold(
-      backgroundColor: theme.kanban.canvas,
-      endDrawer: TagManagerPanel(boardId: widget.boardId),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _header(context, board, cards.length),
-            Expanded(
-              child: Focus(
-                autofocus: true,
-                onKeyEvent: _onKey,
-                child: MouseRegion(
-                  cursor: _panning || _spaceDown
-                      ? SystemMouseCursors.grabbing
-                      : SystemMouseCursors.basic,
-                  child: Listener(
-                    onPointerSignal: _onPointerSignal,
-                    onPointerDown: _onPointerDown,
-                    onPointerMove: _onPointerMove,
-                    onPointerUp: (_) => _panning = false,
-                    onPointerCancel: (_) => _panning = false,
-                    child: Stack(
-                      key: _viewportKey,
-                      children: [
-                        Positioned.fill(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: _commitTitle,
-                            onDoubleTapDown: _onCanvasDoubleTap,
-                            child: CustomPaint(
-                              painter: GridPainter(
-                                transform: _t,
-                                dotColor: theme.kanban.canvasDot,
-                              ),
-                            ),
+    return Column(
+      children: [
+        _toolbar(context),
+        Expanded(
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: _onKey,
+            child: MouseRegion(
+              cursor: _panning || _spaceDown
+                  ? SystemMouseCursors.grabbing
+                  : SystemMouseCursors.basic,
+              child: Listener(
+                onPointerSignal: _onPointerSignal,
+                onPointerDown: _onPointerDown,
+                onPointerMove: _onPointerMove,
+                onPointerUp: (_) => _panning = false,
+                onPointerCancel: (_) => _panning = false,
+                child: Stack(
+                  key: _viewportKey,
+                  children: [
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _commitTitle,
+                        onDoubleTapDown: _onCanvasDoubleTap,
+                        child: CustomPaint(
+                          painter: GridPainter(
+                            transform: _t,
+                            dotColor: theme.kanban.canvasDot,
                           ),
                         ),
-                        for (final card in cards)
-                          _positionedCard(
-                            card,
-                            [
-                              for (final id in cardTags[card.id] ?? const <String>[])
-                                if (tagById[id] != null) tagById[id]!,
-                            ],
-                            commentCounts[card.id] ?? 0,
-                          ),
-                        if (cards.isEmpty) const _CanvasHint(),
-                      ],
+                      ),
                     ),
-                  ),
+                    for (final card in cards)
+                      _positionedCard(
+                        card,
+                        [
+                          for (final id in cardTags[card.id] ?? const <String>[])
+                            if (tagById[id] != null) tagById[id]!,
+                        ],
+                        commentCounts[card.id] ?? 0,
+                      ),
+                    if (cards.isEmpty) const _CanvasHint(),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -135,59 +130,22 @@ class _BoardCanvasPageState extends ConsumerState<BoardCanvasPage> {
   // 顶栏
   // -------------------------------------------------------------------------
 
-  Widget _header(BuildContext context, BoardRow? board, int cardCount) {
-    final theme = Theme.of(context);
-    final k = theme.kanban;
+  Widget _toolbar(BuildContext context) {
+    final k = Theme.of(context).kanban;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 20, 10),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: k.hairline)),
       ),
       child: Row(
         children: [
-          IconButton(
-            tooltip: '返回看板列表',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back, size: 20),
-          ),
-          const SizedBox(width: 4),
-          if (board != null) ...[
-            Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: k.accent(board.color),
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 9),
-            Text(
-              board.name.isEmpty ? '未命名看板' : board.name,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(width: 12),
-          Text(
-            cardCount == 0 ? '空画布' : '$cardCount 张',
-            style: theme.textTheme.labelSmall?.copyWith(color: k.cardBody),
-          ),
           const Spacer(),
-          _ToolButton(
-            icon: Icons.label_outline,
-            label: '标签',
-            tooltip: '管理标签，顺序决定分组视图的列顺序',
-            onTap: () => Scaffold.of(context).openEndDrawer(),
-          ),
-          const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.grid_view_rounded,
             label: '整理',
             tooltip: '把散乱的卡片排成网格',
-            onTap: () =>
-                ref.read(repositoryProvider).tidyCards(widget.boardId),
+            onTap: () => ref.read(repositoryProvider).tidyCards(widget.boardId),
           ),
           const SizedBox(width: 6),
           _ToolButton(

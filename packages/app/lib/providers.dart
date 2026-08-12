@@ -52,6 +52,11 @@ final cardTagMapProvider = StreamProvider.family<Map<String, List<String>>, Stri
   }),
 );
 
+/// 干草仓库里的卡片。
+final archivedCardsProvider = StreamProvider.family<List<CardRow>, String>(
+  (ref, boardId) => ref.watch(repositoryProvider).watchArchivedCards(boardId),
+);
+
 final cardProvider = StreamProvider.family<CardRow?, String>(
   (ref, cardId) => ref.watch(repositoryProvider).watchCard(cardId),
 );

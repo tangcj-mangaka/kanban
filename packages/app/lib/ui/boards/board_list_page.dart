@@ -6,7 +6,7 @@ import '../../data/repository.dart';
 import '../../providers.dart';
 import '../format.dart';
 import '../theme/app_theme.dart';
-import '../canvas/board_canvas_page.dart';
+import '../board/board_page.dart';
 import 'board_dialogs.dart';
 
 /// 看板列表页 —— 应用入口。
@@ -322,7 +322,7 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
   void _openBoard(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BoardCanvasPage(boardId: widget.summary.board.id),
+        builder: (_) => BoardPage(boardId: widget.summary.board.id),
       ),
     );
   }

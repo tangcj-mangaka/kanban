@@ -16,7 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
-import 'ui/canvas/board_canvas_page.dart';
+import 'ui/board/board_page.dart';
 import 'ui/card/card_detail_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -52,6 +52,9 @@ class _PreviewApp extends ConsumerWidget {
 /// 弹窗藏在两次点击之后，截图验证时没法自动点。
 const _autoOpen = String.fromEnvironment('OPEN');
 
+/// `--dart-define=VIEW=grouped|haystack` 时直接停在那个视图。
+const _initialView = String.fromEnvironment('VIEW');
+
 class _FirstBoardCanvas extends ConsumerStatefulWidget {
   const _FirstBoardCanvas();
 
@@ -82,6 +85,13 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
       }
     }
 
-    return BoardCanvasPage(boardId: boardId);
+    return BoardPage(
+      boardId: boardId,
+      initialView: switch (_initialView) {
+        'grouped' => BoardView.grouped,
+        'haystack' => BoardView.haystack,
+        _ => BoardView.canvas,
+      },
+    );
   }
 }
