@@ -1,0 +1,42 @@
+# macOS / Windows 杂项
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+
+# 编辑器
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+**/doc/api/
+app.*.symbols
+app.*.map.json
+
+# Android
+**/android/.gradle
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+**/android/**/gradle-wrapper.jar
+**/android/gradlew
+**/android/gradlew.bat
+*.jks
+
+# Windows runner 生成物
+**/windows/flutter/generated_plugin*
+
+# 服务端运行时数据（绝不入库）
+/packages/server/data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
