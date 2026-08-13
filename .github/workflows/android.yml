@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Android Gradle 插件要 JDK 17，runner 自带的版本不一定对得上。
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -46,14 +46,42 @@ jobs:
             echo "::warning::debug 密钥每次构建都不同，装新版前需要先卸载旧版。"
             exit 0
           fi
-          echo "$KEYSTORE_B64" | base64 -d > packages/app/android/app/release.jks
+
+          # 下面每一步都单独报错。原来只有一句 base64 的原始报错，
+          # 出问题时看不出到底是哪个 secret 填错了。
+          KEYSTORE=packages/app/android/app/release.jks
+          if ! echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE" 2>/dev/null; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 解不开。"
+            echo "::error::重新生成：base64 -i ~/kanban-release.jks | pbcopy，整段粘贴，别带多余字符。"
+            exit 1
+          fi
+
+          if [ -z "$STORE_PASSWORD" ]; then
+            echo "::error::ANDROID_STORE_PASSWORD 是空的（没配，或者名字拼错了）。"
+            exit 1
+          fi
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "::error::ANDROID_KEY_ALIAS 是空的。生成密钥时用的 -alias 是什么就填什么。"
+            exit 1
+          fi
+
+          # 用 keytool 验一遍：能列出这个 alias，就说明文件是完好的
+          # 密钥库、密码对得上、alias 也存在。等到 Gradle 那步才炸的话，
+          # 报错埋在几十行 Gradle 输出里，很难看出是密码问题。
+          if ! keytool -list -keystore "$KEYSTORE" \
+               -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::密钥库打不开。可能是 ANDROID_STORE_PASSWORD 不对，"
+            echo "::error::或者 ANDROID_KEY_ALIAS（当前：$KEY_ALIAS）在密钥库里不存在。"
+            exit 1
+          fi
+
           cat > packages/app/android/key.properties <<EOF
           storeFile=release.jks
           storePassword=$STORE_PASSWORD
           keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
+          keyPassword=${KEY_PASSWORD:-$STORE_PASSWORD}
           EOF
-          echo "已启用正式签名。"
+          echo "已启用正式签名（alias: $KEY_ALIAS）。"
 
       - name: 拉依赖（shared）
         working-directory: packages/shared
