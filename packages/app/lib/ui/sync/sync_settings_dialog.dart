@@ -75,7 +75,9 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
                 height: 120,
                 child: Center(child: CircularProgressIndicator()),
               )
-            : Column(
+            // 内容比一屏高，尤其发现到多台服务端时。不给滚动就会溢出。
+            : SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -173,6 +175,7 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
                     ),
                   ),
                 ],
+              ),
               ),
       ),
       actions: [

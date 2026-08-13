@@ -18,6 +18,7 @@ import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/board/board_page.dart';
 import 'ui/card/card_detail_dialog.dart';
+import 'ui/sync/sync_settings_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
 void main() {
@@ -54,7 +55,11 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
-      themeMode: ref.watch(themeModeProvider),
+      themeMode: switch (_forceTheme) {
+        'dark' => ThemeMode.dark,
+        'light' => ThemeMode.light,
+        _ => ref.watch(themeModeProvider),
+      },
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
       localizationsDelegates: const [
@@ -82,6 +87,11 @@ const _syncHost = String.fromEnvironment('SYNC_HOST');
 const _syncPort = int.fromEnvironment('SYNC_PORT', defaultValue: 8765);
 const _syncCode = String.fromEnvironment('SYNC_CODE');
 
+/// `--dart-define=THEME=dark|light` 时强制主题。
+///
+/// 截图验证深色主题时不用去改系统外观——那会动用户的机器设置。
+const _forceTheme = String.fromEnvironment('THEME');
+
 class _FirstBoardCanvas extends ConsumerStatefulWidget {
   const _FirstBoardCanvas();
 
@@ -103,7 +113,13 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
     final boardId = boards.first.board.id;
     if (_autoOpen.isNotEmpty && !_opened) {
       final cards = ref.watch(canvasCardsProvider(boardId)).value;
-      if (cards != null && cards.isNotEmpty) {
+      if (_autoOpen == 'sync') {
+        _opened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showSyncSettings(context);
+        });
+      } else if (cards != null && cards.isNotEmpty) {
         _opened = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;

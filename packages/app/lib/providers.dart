@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,7 +22,12 @@ final repositoryProvider = Provider<Repository>(
 
 /// 同步客户端。进程内单例，随应用启动。
 final syncClientProvider = Provider<SyncClient>((ref) {
-  final client = SyncClient(ref.watch(databaseProvider));
+  final client = SyncClient(
+    ref.watch(databaseProvider),
+    // 同步的问题几乎都是时序问题，靠事后推理很难对上，得看事情实际
+    // 发生的顺序。只在调试构建里打，不打扰正式版。
+    onLog: kDebugMode ? (m) => debugPrint('[同步] $m') : null,
+  );
   ref.onDispose(client.dispose);
   // 不 await：同步永远不该挡住界面启动。连不上就安静排队。
   unawaited(client.start());

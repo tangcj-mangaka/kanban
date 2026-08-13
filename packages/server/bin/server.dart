@@ -56,7 +56,13 @@ Future<void> main(List<String> args) async {
       overrideHost: opts.option('host'),
       onLog: _log,
     );
-    await discovery.start();
+    try {
+      await discovery.start();
+    } catch (e) {
+      // 发现不可用不影响同步，手动填地址那条路照常走。
+      _log('局域网自动发现启动失败（不影响同步）：$e');
+      discovery = null;
+    }
   }
 
   final addresses = discovery != null

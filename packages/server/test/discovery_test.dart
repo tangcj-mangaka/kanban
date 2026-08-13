@@ -64,6 +64,52 @@ void main() {
     });
   });
 
+  group('广播目标', () {
+    test('按 /24 推算子网广播地址', () {
+      // macOS 上发往 255.255.255.255 会直接失败（send 返回 0），
+      // 必须用子网定向广播才能真正到达局域网里的其他设备。
+      expect(subnetBroadcast('192.168.1.23'), '192.168.1.255');
+      expect(subnetBroadcast('10.58.204.11'), '10.58.204.255');
+      expect(subnetBroadcast('172.20.3.7'), '172.20.3.255');
+    });
+
+    test('不是 IPv4 的地址返回 null', () {
+      expect(subnetBroadcast('fe80::1'), isNull);
+      expect(subnetBroadcast('乱七八糟'), isNull);
+      expect(subnetBroadcast('1.2.3'), isNull);
+      expect(subnetBroadcast('a.b.c.d'), isNull);
+    });
+
+    test('默认只发子网广播和回环', () {
+      final targets = broadcastTargetsFor('192.168.1.23');
+      expect(targets, contains('192.168.1.255'), reason: '子网定向广播，真正能到达别的设备');
+      expect(
+        targets,
+        contains('127.0.0.1'),
+        reason: '服务端和客户端跑在同一台笔记本上是最常见的用法，而广播不回环',
+      );
+      expect(
+        targets,
+        isNot(contains('255.255.255.255')),
+        reason: 'macOS 上发它不只是失败，还会把 socket 弄坏，之后连回环都发不出去',
+      );
+    });
+
+    test('Windows 上才加受限广播', () {
+      final targets = broadcastTargetsFor(
+        '192.168.1.23',
+        includeLimitedBroadcast: true,
+      );
+      expect(targets, contains('255.255.255.255'));
+    });
+
+    test('子网算不出来时也不影响其余目标', () {
+      final targets = broadcastTargetsFor('不是地址');
+      expect(targets, contains('127.0.0.1'));
+      expect(targets, isNot(contains(null)));
+    });
+  });
+
   group('挑选局域网地址', () {
     test('排除回环', () {
       final got = pickLanAddresses([

@@ -4,9 +4,14 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.cs.allow-jit</key>
+	<!-- 连服务端要出站权限。少了这个，沙盒会直接掐掉连接，
+	     而且客户端看到的只是"连不上"，查不到原因。 -->
+	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- 局域网自动发现要绑 UDP 端口收广播。 -->
 	<key>com.apple.security.network.server</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
 </dict>
 </plist>

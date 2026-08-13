@@ -280,6 +280,96 @@ void main() {
     });
   });
 
+  group('启动时序', () {
+    test('start 和 configure 并发时不会互相踩掉配置', () async {
+      // 这是实机演示时才发现的真 bug：应用启动会调 start()，而自动配对
+      // 几乎同时调 configure()。start() 里的 _loadSettings 读到的是
+      // configure 写入之前的旧值，回头把服务器地址覆盖成了 null，
+      // 两边都以为"没配服务器"，连接根本没发起。
+      final code = syncServer.newPairCode();
+      await clientA.setDeviceName('A');
+
+      // 故意不 await：模拟两者交错
+      unawaited(clientA.start());
+      await clientA.configure(host: 'localhost', port: port, pairCode: code);
+
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online ||
+            clientA.state.status == SyncStatus.syncing,
+        what: '并发启动后仍然连上',
+      );
+    });
+
+    test('重复调用 start 只初始化一次', () async {
+      await Future.wait([clientA.start(), clientA.start(), clientA.start()]);
+      expect(clientA.state.status, SyncStatus.disabled, reason: '没配服务器时就该是未连接');
+
+      final code = syncServer.newPairCode();
+      await clientA.configure(host: 'localhost', port: port, pairCode: code);
+      await waitUntil(
+        () => clientA.state.status != SyncStatus.disabled,
+        what: '配置后能连上',
+      );
+    });
+
+    test('旧连接被拒的错误，不会盖掉新连接的成功', () async {
+      // 实机演示时踩到的：数据库里留着上次的服务器地址但没有有效令牌，
+      // 应用启动时用它连了一次（注定被拒），用户几乎同时用新配对码连了
+      // 第二次。第二次成功了，但第一次被拒的错误**后到**，
+      // 把「已同步」盖回了「令牌无效」。
+      await dbA.setSetting(SyncKeys.host, 'localhost');
+      await dbA.setSetting(SyncKeys.port, '$port');
+
+      final code = syncServer.newPairCode();
+      await clientA.setDeviceName('A');
+      unawaited(clientA.start()); // 用旧设置，会被拒
+      await clientA.configure(host: 'localhost', port: port, pairCode: code);
+
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online ||
+            clientA.state.status == SyncStatus.syncing,
+        what: '用新配对码连上',
+      );
+
+      // 再等一会儿，确认那条被拒的错误没有后到把状态搅掉
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(clientA.state.error, isNull, reason: '旧连接的错误不该出现');
+      expect(clientA.state.status, isNot(SyncStatus.offline));
+    });
+
+    test('鉴权被拒之后，用正确的配对码仍然能救回来', () async {
+      // 实机演示时踩到的：鉴权失败时把 _started 置成 false，本意是
+      // 「别再无脑重试」，但它同时把用户主动发起的 configure() 也堵死了——
+      // 带正确配对码的那次连接根本没发出去。停止自动重连 ≠ 拒绝重新配置。
+      await clientA.setDeviceName('A');
+      await clientA.configure(host: 'localhost', port: port, pairCode: '错误的码');
+      await waitUntil(
+        () => clientA.state.error != null,
+        what: '被服务端拒绝',
+      );
+
+      final code = syncServer.newPairCode();
+      await clientA.configure(host: 'localhost', port: port, pairCode: code);
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online ||
+            clientA.state.status == SyncStatus.syncing,
+        what: '用正确的配对码连上',
+      );
+    });
+
+    test('stop 之后还能再 start', () async {
+      await connect(clientA, 'A');
+      await clientA.stop();
+      expect(clientA.state.status, SyncStatus.disabled);
+
+      await clientA.start();
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online,
+        what: '重新启动后连上',
+      );
+    });
+  });
+
   group('编辑态提示', () {
     test('一端开始编辑，另一端能看到是谁', () async {
       await connect(clientA, '我的 Mac');

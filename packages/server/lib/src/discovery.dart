@@ -114,6 +114,35 @@ List<String> pickLanAddresses(List<NetInterfaceInfo> interfaces) {
   return candidates;
 }
 
+/// 某个本机地址对应的子网广播地址。
+///
+/// **macOS 上发往 255.255.255.255 会直接失败**（send 返回 0），必须用
+/// 子网定向广播。Dart 的 NetworkInterface 不暴露子网掩码，所以按 /24 推算
+/// ——家庭和办公网络几乎都是 /24，个别不是的还有手动填地址那条路兜底。
+String? subnetBroadcast(String address) {
+  final parts = address.split('.');
+  if (parts.length != 4) return null;
+  if (parts.any((p) => int.tryParse(p) == null)) return null;
+  return '${parts[0]}.${parts[1]}.${parts[2]}.255';
+}
+
+/// 一个本机地址要往哪些目标发广播。
+///
+/// [includeLimitedBroadcast] 只在 Windows 上开。**在 macOS 上发往
+/// 255.255.255.255 不只是失败，还会把 socket 弄坏**——之后连回环地址
+/// 都发不出去了。为了一个注定失败的目标搭上整轮广播不值得。
+List<String> broadcastTargetsFor(
+  String address, {
+  bool includeLimitedBroadcast = false,
+}) => [
+  // 子网定向广播：真正能到达局域网里其他设备的那个
+  ?subnetBroadcast(address),
+  if (includeLimitedBroadcast) '255.255.255.255',
+  // 回环：服务端和客户端跑在同一台笔记本上是最常见的用法，
+  // 而广播不会回环到本机
+  '127.0.0.1',
+];
+
 /// 定时往局域网广播自己的地址。
 ///
 /// 客户端据此自动发现服务端，省得用户手抄 IP。
@@ -167,31 +196,79 @@ class DiscoveryBroadcaster {
       onLog?.call('局域网地址：${addresses.join('、')}');
     }
 
+    // **必须给 onError。** RawDatagramSocket 的发送失败不是同步抛异常，
+    // 而是通过错误流异步报出来的——所以包在 send 外面的 try/catch 根本
+    // 拦不住它。没有 onError 的话，一次发往不可达地址的广播就会变成
+    // 未捕获的异步错误，把整个服务端进程干掉。
+    //
+    // 局域网发现是锦上添花的功能，绝不能拖垮同步。
+    _socket!.listen(
+      (event) {
+        if (event == RawSocketEvent.write) _flush();
+      },
+      onError: (Object e) => onLog?.call('广播出错（已忽略）：$e'),
+      cancelOnError: false,
+    );
+
     _timer = Timer.periodic(interval, (_) => _broadcast());
     await _broadcast();
   }
+
+  /// 这一轮还没发出去的包。
+  ///
+  /// `RawDatagramSocket.send()` 在 socket 尚未写就绪时会**静默返回 0**，
+  /// 包根本没发出去。所以先直接试一次，没发完的等写就绪事件再补。
+  ///
+  /// 每轮都重建这个列表：发不出去的目标（比如 macOS 上的 255.255.255.255）
+  /// 不该赖在队列里反复触发写事件，下一轮 2 秒后自然会重试。
+  List<(List<int>, InternetAddress)> _pending = [];
 
   Future<void> _broadcast() async {
     final socket = _socket;
     if (socket == null) return;
 
     final addresses = await currentAddresses();
+    final batch = <(List<int>, InternetAddress)>[];
     for (final host in addresses) {
       final beacon = DiscoveryBeacon(
         host: host,
         port: syncPort,
         name: serverName,
       );
-      try {
-        socket.send(
-          utf8.encode(jsonEncode(beacon.toJson())),
-          InternetAddress('255.255.255.255'),
-          kDiscoveryPort,
-        );
-      } catch (_) {
-        // 某张网卡当下发不出去很正常（刚断网、正在切换），下一轮再试。
+      final payload = utf8.encode(jsonEncode(beacon.toJson()));
+      for (final target in broadcastTargetsFor(
+        host,
+        includeLimitedBroadcast: Platform.isWindows,
+      )) {
+        try {
+          batch.add((payload, InternetAddress(target)));
+        } catch (_) {
+          // 地址解析不了就跳过。
+        }
       }
     }
+
+    _pending = batch;
+    _flush();
+    // 还有没发出去的，等写就绪再补一次。
+    if (_pending.isNotEmpty) socket.writeEventsEnabled = true;
+  }
+
+  void _flush() {
+    final socket = _socket;
+    if (socket == null || _pending.isEmpty) return;
+
+    final remaining = <(List<int>, InternetAddress)>[];
+    for (final (payload, target) in _pending) {
+      try {
+        if (socket.send(payload, target, kDiscoveryPort) == 0) {
+          remaining.add((payload, target));
+        }
+      } catch (_) {
+        // 某个目标不可达（比如 macOS 上的受限广播地址）。下一轮再说。
+      }
+    }
+    _pending = remaining;
   }
 
   void stop() {

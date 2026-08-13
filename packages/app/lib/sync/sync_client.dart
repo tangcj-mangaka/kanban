@@ -81,7 +81,13 @@ class SyncState {
 class SyncClient {
   final AppDatabase db;
 
-  SyncClient(this.db);
+  /// 诊断日志。同步的问题几乎都是时序问题，靠事后推理很难对上，
+  /// 得看事情实际发生的顺序。
+  final void Function(String message)? onLog;
+
+  SyncClient(this.db, {this.onLog});
+
+  void _log(String message) => onLog?.call(message);
 
   final _stateController = StreamController<SyncState>.broadcast();
 
@@ -103,8 +109,33 @@ class SyncClient {
 
   bool _started = false;
   bool _handshaken = false;
+
+  /// 鉴权被拒。停掉自动重连，但**不阻止用户重新配置**——
+  /// 令牌失效正是需要人来处理的情况，把重新配对的路也堵死就没救了。
+  bool _authBlocked = false;
   bool _flushing = false;
   int _reconnectAttempt = 0;
+
+  /// 连接代次。每发起一次连接就加一，**只有最新那次有权改状态**。
+  ///
+  /// 没有它就会出这种事：应用启动时用旧设置连了一次，用户几乎同时用新
+  /// 配对码连了第二次；第二次成功了，但第一次被拒的错误后到，
+  /// 把"已同步"盖回了"令牌无效"。
+  int _connectGen = 0;
+
+  /// 连接相关的动作排队执行，一次只跑一个。
+  ///
+  /// 不串行化会出这种事：`configure()` 的一串 await 中间，`start()` 发起的
+  /// 那条连接把刚设好的一次性配对码用掉并配对成功了；`configure()` 接着
+  /// 照旧「关掉重连」，把唯一能用的连接掐了，而配对码已经消耗完——
+  /// 结果是配对成功过、却停在「令牌无效」。
+  Future<void> _queue = Future<void>.value();
+
+  Future<void> _serialized(Future<void> Function() action) {
+    final next = _queue.then((_) => action()).catchError((_) {});
+    _queue = next;
+    return next;
+  }
 
   String? _host;
   int _port = 8765;
@@ -127,18 +158,35 @@ class SyncClient {
   // 生命周期
   // -------------------------------------------------------------------------
 
-  Future<void> start() async {
-    if (_started) return;
-    _started = true;
+  /// 只做初始化（读设置、订阅本地 op），**不发起连接**。
+  ///
+  /// 幂等，并发调用会等到同一次完成。这一步要和「连接」分开，否则
+  /// [configure] 得先跑一次用旧配置的连接——旧配置多半是错的，
+  /// 那次注定被拒的连接还会把状态搅浑。
+  ///
+  /// 拆开之前踩过一次：`configure()` 在 `start()` 还在读设置时就去写设置，
+  /// `_loadSettings` 随后用读到的旧值把刚写进去的服务器地址覆盖成了 null，
+  /// 结果两边都以为"没配服务器"，连接根本没发起。
+  Future<void> _ensureInit() => _initFuture ??= _init();
+  Future<void>? _initFuture;
 
+  Future<void> _init() async {
     await _loadSettings();
-    _localOpSub = db.localOpAdded.listen((_) => _scheduleFlush());
+    _localOpSub ??= db.localOpAdded.listen((_) => _scheduleFlush());
+  }
 
-    if (_host == null) {
-      _emit(_state.copyWith(status: SyncStatus.disabled));
-      return;
-    }
-    await _connect();
+  Future<void> start() async {
+    await _ensureInit();
+    return _serialized(() async {
+      _started = true;
+      _log('start()：地址 ${_host ?? '未配置'}');
+
+      if (_host == null) {
+        _emit(_state.copyWith(status: SyncStatus.disabled));
+        return;
+      }
+      await _connect();
+    });
   }
 
   Future<void> stop() async {
@@ -164,20 +212,33 @@ class SyncClient {
     required int port,
     String? pairCode,
   }) async {
-    _host = host;
-    _port = port;
-    _pairCode = pairCode;
-    await db.setSetting(SyncKeys.host, host);
-    await db.setSetting(SyncKeys.port, '$port');
-    if (pairCode != null) await db.setSetting(SyncKeys.token, null);
+    // 只做初始化，不连接：这里马上要用新配置连，先用旧配置连一次
+    // 是白费力气，而且那次多半会被拒、把状态搅浑。
+    await _ensureInit();
+    return _serialized(() async {
+      _started = true;
+      _authBlocked = false;
+      _log('configure()：$host:$port，配对码${pairCode ?? '无'}');
 
-    _reconnectAttempt = 0;
-    await _closeSocket();
-    if (_started) {
+      // 已经连着同一台、又没给新配对码，就别多此一举断开重连——
+      // 断开重连本身没有坏处，但会白白浪费一次性配对码。
+      if (_handshaken && _host == host && _port == port && pairCode == null) {
+        _log('已连着同一台服务端，无需重连');
+        return;
+      }
+
+      _host = host;
+      _port = port;
+      _pairCode = pairCode;
+      await db.setSetting(SyncKeys.host, host);
+      await db.setSetting(SyncKeys.port, '$port');
+      if (pairCode != null) await db.setSetting(SyncKeys.token, null);
+      _token = await db.getSetting(SyncKeys.token);
+
+      _reconnectAttempt = 0;
+      await _closeSocket();
       await _connect();
-    } else {
-      await start();
-    }
+    });
   }
 
   /// 忘掉这台服务器：断开、清掉地址和令牌。
@@ -217,6 +278,9 @@ class SyncClient {
   Future<void> _connect() async {
     if (!_started || _host == null) return;
 
+    final gen = ++_connectGen;
+    _log('连接#$gen 开始 → $_host:$_port'
+        '（令牌${_token == null ? '无' : '有'}，配对码${_pairCode ?? '无'}）');
     _reconnectTimer?.cancel();
     _emit(_state.copyWith(status: SyncStatus.connecting, clearError: true));
 
@@ -225,13 +289,19 @@ class SyncClient {
         Uri.parse('ws://$_host:$_port/sync'),
       );
       await channel.ready;
+      // 等待期间又发起了新连接，这一条已经过期，直接扔掉。
+      if (gen != _connectGen) {
+        _log('连接#$gen 已过期（当前#$_connectGen），丢弃');
+        await channel.sink.close();
+        return;
+      }
       _channel = channel;
       _handshaken = false;
 
       _socketSub = channel.stream.listen(
-        _onRaw,
-        onDone: _onSocketClosed,
-        onError: (_) => _onSocketClosed(),
+        (raw) => _onRaw(gen, raw),
+        onDone: () => _onSocketClosed(gen),
+        onError: (_) => _onSocketClosed(gen),
         cancelOnError: true,
       );
 
@@ -246,11 +316,16 @@ class SyncClient {
       );
     } catch (_) {
       // 连不上很正常——服务端是台随身携带的笔记本。安静重试，不打扰用户。
-      _onSocketClosed();
+      _onSocketClosed(gen);
     }
   }
 
-  void _onSocketClosed() {
+  void _onSocketClosed(int gen) {
+    if (gen != _connectGen) {
+      _log('连接#$gen 断开（已过期，忽略）');
+      return;
+    }
+    _log('连接#$gen 断开');
     _heartbeat?.cancel();
     _socketSub?.cancel();
     _socketSub = null;
@@ -263,16 +338,20 @@ class SyncClient {
   }
 
   void _scheduleReconnect() {
+    // 令牌不对时重试多少次都是一样的结果，等用户来处理。
+    if (_authBlocked) return;
     _reconnectTimer?.cancel();
     final seconds = 1 << _reconnectAttempt.clamp(0, 5);
     final delay = Duration(seconds: seconds) > _maxBackoff
         ? _maxBackoff
         : Duration(seconds: seconds);
     _reconnectAttempt++;
-    _reconnectTimer = Timer(delay, _connect);
+    _reconnectTimer = Timer(delay, () => _serialized(_connect));
   }
 
   Future<void> _closeSocket() async {
+    // 让所有在飞的连接失效。
+    _connectGen++;
     _heartbeat?.cancel();
     await _socketSub?.cancel();
     _socketSub = null;
@@ -285,7 +364,10 @@ class SyncClient {
   // 收消息
   // -------------------------------------------------------------------------
 
-  Future<void> _onRaw(dynamic raw) async {
+  Future<void> _onRaw(int gen, dynamic raw) async {
+    // 旧连接的消息一律不理——它说的是过时的事。
+    if (gen != _connectGen) return;
+
     late final SyncMessage msg;
     try {
       msg = SyncMessage.fromJson(
@@ -294,6 +376,7 @@ class SyncClient {
     } catch (_) {
       return;
     }
+    _log('连接#$gen 收到 ${msg.type}');
 
     switch (msg) {
       case PairedMessage():
@@ -346,7 +429,7 @@ class SyncClient {
         // 鉴权被拒是用户要处理的事（重新配对），不能静默重试到天荒地老。
         if (msg.code == ErrorCode.badToken) {
           _emit(_state.copyWith(status: SyncStatus.offline, error: msg.message));
-          _started = false;
+          _authBlocked = true;
           await _closeSocket();
         }
 
@@ -379,7 +462,7 @@ class SyncClient {
     try {
       channel.sink.add(jsonEncode(msg.toJson()));
     } catch (_) {
-      _onSocketClosed();
+      _onSocketClosed(_connectGen);
     }
   }
 
