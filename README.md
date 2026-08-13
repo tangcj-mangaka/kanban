@@ -129,3 +129,32 @@ Mac 上验证不了的部分，出包后逐项过一遍（设计文档 §8.4 有
 - 局域网广播：Windows 上受限广播才有效，与 macOS 行为不同
 - 中文字体（微软雅黑）下的行高与字重观感
 - 高 DPI 缩放下的画布表现
+
+## 安卓客户端的签名
+
+CI 会出一个 `kanban-android` APK。默认用 **debug 密钥**签名——能装能用，但
+debug 密钥是每台构建机各自随机生成的，所以**每次 CI 出的包签名都不一样**，
+装新版会被安卓以「签名不匹配」拒掉，得先卸载旧版（数据也就没了，除非已经
+同步到服务器）。
+
+要长期用就配一个固定密钥，只需做一次：
+
+```bash
+keytool -genkeypair -v -keystore kanban-release.jks -storetype PKCS12 \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias kanban
+```
+
+然后把 keystore 转成 base64（`base64 -i kanban-release.jks | pbcopy`），
+在 GitHub 仓库的 Settings → Secrets and variables → Actions 里加四个 secret：
+
+| 名字 | 内容 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | 上一步的 base64 |
+| `ANDROID_STORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_PASSWORD` | key 密码（一般同上） |
+| `ANDROID_KEY_ALIAS` | `kanban` |
+
+配好之后 CI 自动改用正式签名，以后升级直接覆盖安装。
+
+**keystore 文件和密码务必自己留好备份**：丢了就再也没法给已装的版本推更新，
+只能卸载重装。仓库里不会有它——`.gitignore` 挡着 `key.properties` 和 `*.jks`。
