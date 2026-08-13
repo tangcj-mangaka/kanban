@@ -5,6 +5,7 @@ import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
 import '../format.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 
 /// 干草仓库 —— 每块看板自己的归档区。
@@ -89,10 +90,16 @@ class _HaystackViewState extends ConsumerState<HaystackView> {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: k.hairline)),
       ),
-      child: Row(
+      // 窄屏一行放不下搜索框 + 筛选 + 清空，换行排。
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           SizedBox(
-            width: 240,
+            width: isCompact(context)
+                ? MediaQuery.sizeOf(context).width - 56
+                : 240,
             child: TextField(
               onChanged: (v) => setState(() => _query = v.trim()),
               style: theme.textTheme.bodySmall,
@@ -103,7 +110,6 @@ class _HaystackViewState extends ConsumerState<HaystackView> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
           if (tags.isNotEmpty)
             PopupMenuButton<String?>(
               tooltip: '按标签筛选',
@@ -135,7 +141,6 @@ class _HaystackViewState extends ConsumerState<HaystackView> {
                 ),
               ),
             ),
-          const Spacer(),
           if (total > 0)
             TextButton.icon(
               onPressed: () => _confirmEmpty(total),

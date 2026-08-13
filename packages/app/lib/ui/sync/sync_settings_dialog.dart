@@ -7,6 +7,7 @@ import 'package:shared/shared.dart';
 
 import '../../sync/discovery_listener.dart';
 import '../../sync/sync_client.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 
 Future<void> showSyncSettings(BuildContext context) {
@@ -69,7 +70,7 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
     return AlertDialog(
       title: const Text('局域网同步'),
       content: SizedBox(
-        width: 420,
+        width: dialogWidth(context, 420),
         child: !_loaded
             ? const SizedBox(
                 height: 120,

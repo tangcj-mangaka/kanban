@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
 import '../../providers.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 
 /// 给一张卡片挑标签。
@@ -53,7 +54,7 @@ class _CardTagPickerState extends ConsumerState<_CardTagPicker> {
     return AlertDialog(
       title: const Text('标签'),
       content: SizedBox(
-        width: 340,
+        width: dialogWidth(context, 340),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,

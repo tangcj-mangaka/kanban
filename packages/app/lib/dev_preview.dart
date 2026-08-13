@@ -129,10 +129,13 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
 
     return BoardPage(
       boardId: boardId,
+      // 不指定时传 null，让 BoardPage 按屏幕宽度自己定
+      // （手机默认分组视图）。写死 canvas 会把那个默认绕过去。
       initialView: switch (_initialView) {
         'grouped' => BoardView.grouped,
         'haystack' => BoardView.haystack,
-        _ => BoardView.canvas,
+        'canvas' => BoardView.canvas,
+        _ => null,
       },
     );
   }

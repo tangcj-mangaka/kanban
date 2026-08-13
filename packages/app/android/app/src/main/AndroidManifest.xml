@@ -1,8 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      正式版必须自己声明。Flutter 只往 debug 和 profile 的清单里加了这条
+      （为了热重载），主清单没有——不加的话正式版 APK 完全没有网络。
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="驴看板"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

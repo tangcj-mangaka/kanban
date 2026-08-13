@@ -273,6 +273,90 @@ void main() {
     });
   });
 
+  group('响应式：写入必须通知查询流', () {
+    // 这是藏了很久的一个 bug：_writeField 用 customStatement 执行裸 SQL，
+    // drift 无从知道它改了哪张表，于是不通知任何查询流——每条 op 都正确
+    // 落库，但界面一动不动，只显示启动那一刻的数据。
+    //
+    // 之前的测试全都用 .first（每次新建查询），照不出「流不发新值」；
+    // 截图验证又都是先灌数据再启动应用，读的是启动快照。两种方式都漏掉了。
+    test('应用 op 后，已订阅的流会发出新值', () async {
+      final stream = (db.select(db.cards)).watch();
+      final emissions = <List<CardRow>>[];
+      final sub = stream.listen(emissions.add);
+
+      // 等首次发射
+      await pumpEventQueue();
+      final before = emissions.length;
+
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '新卡片', seq: 1));
+      await pumpEventQueue();
+
+      expect(
+        emissions.length,
+        greaterThan(before),
+        reason: '写入之后流必须再发一次，否则界面永远不刷新',
+      );
+      expect(emissions.last.single.title, '新卡片');
+      await sub.cancel();
+    });
+
+    test('改字段也会通知', () async {
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '原标题', seq: 1));
+
+      final emissions = <List<CardRow>>[];
+      final sub = db.select(db.cards).watch().listen(emissions.add);
+      await pumpEventQueue();
+      final before = emissions.length;
+
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '改过的', seq: 2));
+      await pumpEventQueue();
+
+      expect(emissions.length, greaterThan(before));
+      expect(emissions.last.single.title, '改过的');
+      await sub.cancel();
+    });
+
+    test('标签关系的写入也会通知', () async {
+      final emissions = <List<CardTagRow>>[];
+      final sub = db.select(db.cardTags).watch().listen(emissions.add);
+      await pumpEventQueue();
+      final before = emissions.length;
+
+      await db.applyOp(
+        mk(Entity.cardTag, cardTagId('c1', 't1'), CardTagF.deleted, false, seq: 1),
+      );
+      await pumpEventQueue();
+
+      expect(emissions.length, greaterThan(before));
+      await sub.cancel();
+    });
+
+    test('ACK 后的重放也会通知', () async {
+      await db.emit(
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: CardF.title,
+        value: '本机的',
+      );
+      await db.applyOp(mk(Entity.card, 'c1', CardF.title, '远端的', seq: 105));
+
+      final emissions = <List<CardRow>>[];
+      final sub = db.select(db.cards).watch().listen(emissions.add);
+      await pumpEventQueue();
+      final before = emissions.length;
+
+      final localOp = (await db.pendingOps()).single;
+      await db.ackOps({localOp.opId: 101});
+      await pumpEventQueue();
+
+      expect(emissions.length, greaterThan(before), reason: '重放改了值就该通知');
+      expect(emissions.last.single.title, '远端的');
+      await sub.cancel();
+    });
+  });
+
   group('值的类型', () {
     test('浮点、布尔、null 都能正确往返', () async {
       await db.applyOp(mk(Entity.card, 'c1', CardF.x, 12.5, seq: 1));

@@ -6,6 +6,7 @@ import '../canvas/canvas_view.dart';
 import '../grouped/grouped_view.dart';
 import '../haystack/haystack_view.dart';
 import '../tags/tag_manager_panel.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 
 enum BoardView {
@@ -28,26 +29,32 @@ enum BoardView {
 class BoardPage extends ConsumerStatefulWidget {
   final String boardId;
 
-  /// 进来时停在哪个视图。以后做「记住上次看的视图」也用这个入口。
-  final BoardView initialView;
+  /// 进来时停在哪个视图。
+  ///
+  /// 不给的话按屏幕宽度定：窄屏默认进分组视图。手机上自由画布很难用——
+  /// 看不到全局、拖动精度差，而分组视图是竖着滑的列表，天然适合小屏。
+  /// 摆位置是电脑上干的事。
+  final BoardView? initialView;
 
-  const BoardPage({
-    super.key,
-    required this.boardId,
-    this.initialView = BoardView.canvas,
-  });
+  const BoardPage({super.key, required this.boardId, this.initialView});
 
   @override
   ConsumerState<BoardPage> createState() => _BoardPageState();
 }
 
 class _BoardPageState extends ConsumerState<BoardPage> {
-  late BoardView _view = widget.initialView;
+  BoardView? _view;
+
+  BoardView _defaultView(BuildContext context) =>
+      widget.initialView ??
+      (isCompact(context) ? BoardView.grouped : BoardView.canvas);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final k = theme.kanban;
+    final view = _view ??= _defaultView(context);
+    final compact = isCompact(context);
     final board = ref.watch(boardProvider(widget.boardId)).value;
     final cards = ref.watch(canvasCardsProvider(widget.boardId)).value ?? const [];
     final archived =
@@ -82,41 +89,56 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                       ),
                     ),
                     const SizedBox(width: 9),
-                    Text(
-                      board.name.isEmpty ? '未命名看板' : board.name,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Text(
+                        board.name.isEmpty ? '未命名看板' : board.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
-                  const SizedBox(width: 12),
-                  Text(
-                    cards.isEmpty ? '空看板' : '${cards.length} 张',
-                    style: theme.textTheme.labelSmall?.copyWith(color: k.cardBody),
-                  ),
-                  const Spacer(),
-                  _ViewSwitcher(
-                    current: _view,
-                    archivedCount: archived.length,
-                    onChanged: (v) => setState(() => _view = v),
-                  ),
-                  const SizedBox(width: 12),
-                  Builder(
-                    builder: (context) => TextButton.icon(
-                      onPressed: () => Scaffold.of(context).openEndDrawer(),
-                      icon: const Icon(Icons.label_outline, size: 16),
-                      label: const Text('标签'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: k.cardBody,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                  if (!compact) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      cards.isEmpty ? '空看板' : '${cards.length} 张',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: k.cardBody,
                       ),
                     ),
+                  ],
+                  const Spacer(),
+                  _ViewSwitcher(
+                    current: view,
+                    archivedCount: archived.length,
+                    compact: compact,
+                    onChanged: (v) => setState(() => _view = v),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    // 窄屏放不下文字标签，只留图标。
+                    builder: (context) => compact
+                        ? IconButton(
+                            tooltip: '标签',
+                            onPressed: () => Scaffold.of(context).openEndDrawer(),
+                            icon: const Icon(Icons.label_outline, size: 19),
+                          )
+                        : TextButton.icon(
+                            onPressed: () => Scaffold.of(context).openEndDrawer(),
+                            icon: const Icon(Icons.label_outline, size: 16),
+                            label: const Text('标签'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: k.cardBody,
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                            ),
+                          ),
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: switch (_view) {
+              child: switch (view) {
                 BoardView.canvas => CanvasView(boardId: widget.boardId),
                 BoardView.grouped => GroupedView(boardId: widget.boardId),
                 BoardView.haystack => HaystackView(boardId: widget.boardId),
@@ -132,11 +154,16 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 class _ViewSwitcher extends StatelessWidget {
   final BoardView current;
   final int archivedCount;
+
+  /// 窄屏只显示图标——三个中文标签在手机上放不下。
+  final bool compact;
+
   final ValueChanged<BoardView> onChanged;
 
   const _ViewSwitcher({
     required this.current,
     required this.archivedCount,
+    required this.compact,
     required this.onChanged,
   });
 
@@ -158,6 +185,7 @@ class _ViewSwitcher extends StatelessWidget {
             _SwitcherTab(
               view: view,
               selected: view == current,
+              compact: compact,
               // 仓库里有东西时标出条数，省得每次都要点进去看有没有。
               badge: view == BoardView.haystack && archivedCount > 0
                   ? '$archivedCount'
@@ -173,12 +201,14 @@ class _ViewSwitcher extends StatelessWidget {
 class _SwitcherTab extends StatelessWidget {
   final BoardView view;
   final bool selected;
+  final bool compact;
   final String? badge;
   final VoidCallback onTap;
 
   const _SwitcherTab({
     required this.view,
     required this.selected,
+    required this.compact,
     required this.badge,
     required this.onTap,
   });
@@ -217,14 +247,16 @@ class _SwitcherTab extends StatelessWidget {
                 size: 15,
                 color: selected ? theme.colorScheme.primary : k.cardBody,
               ),
-              const SizedBox(width: 5),
-              Text(
-                view.label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: selected ? theme.colorScheme.primary : k.cardBody,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              if (!compact) ...[
+                const SizedBox(width: 5),
+                Text(
+                  view.label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: selected ? theme.colorScheme.primary : k.cardBody,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
                 ),
-              ),
+              ],
               if (badge != null) ...[
                 const SizedBox(width: 5),
                 Container(

@@ -5,6 +5,7 @@ import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 
 /// 列内排序方式。
@@ -43,6 +44,15 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
   GroupSort _sort = GroupSort.updated;
   bool _showEmpty = false;
 
+  final _pageController = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -56,6 +66,7 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
     final commentCounts =
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
 
+    final compact = isCompact(context);
     final columns = _buildColumns(cards, tags, cardTags);
     final visible = _showEmpty
         ? columns
@@ -64,9 +75,39 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
     return Column(
       children: [
         _toolbar(theme, k, hiddenCount: columns.length - visible.length),
+        if (compact && tags.isNotEmpty && visible.isNotEmpty)
+          _ColumnTabs(
+            columns: visible,
+            current: _page.clamp(0, visible.length - 1),
+            onTap: (i) => _pageController.animateToPage(
+              i,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+            ),
+          ),
         Expanded(
           child: tags.isEmpty
               ? _NoTagsHint(boardId: widget.boardId)
+              : compact
+              // 手机上整屏一列、左右滑动切换。横向滚一条窄柱在小屏上
+              // 又难看又难点。
+              ? PageView.builder(
+                  controller: _pageController,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  itemCount: visible.length,
+                  itemBuilder: (context, i) => Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+                    child: _Column(
+                      boardId: widget.boardId,
+                      column: visible[i],
+                      cardTags: cardTags,
+                      tagById: {for (final t in tags) t.id: t},
+                      commentCounts: commentCounts,
+                      showHeader: false,
+                      fullWidth: true,
+                    ),
+                  ),
+                )
               : ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
@@ -93,12 +134,13 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
       ),
       child: Row(
         children: [
-          Text(
-            '卡片不能在这里拖动，摆位置去画布',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: k.cardBody.withValues(alpha: 0.75),
+          if (!isCompact(context))
+            Text(
+              '卡片不能在这里拖动，摆位置去画布',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: k.cardBody.withValues(alpha: 0.75),
+              ),
             ),
-          ),
           const Spacer(),
           if (hiddenCount > 0)
             Padding(
@@ -211,12 +253,20 @@ class _Column extends ConsumerWidget {
   final Map<String, TagRow> tagById;
   final Map<String, int> commentCounts;
 
+  /// 手机上列名显示在顶部的标签条里，列自己就不用再画一遍标题。
+  final bool showHeader;
+
+  /// 整屏宽度（手机的翻页模式）而不是固定 286。
+  final bool fullWidth;
+
   const _Column({
     required this.boardId,
     required this.column,
     required this.cardTags,
     required this.tagById,
     required this.commentCounts,
+    this.showHeader = true,
+    this.fullWidth = false,
   });
 
   @override
@@ -229,11 +279,11 @@ class _Column extends ConsumerWidget {
         : k.accent(tag.color);
 
     return SizedBox(
-      width: 286,
+      width: fullWidth ? double.infinity : 286,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          if (showHeader) Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 0, 10),
             child: Row(
               children: [
@@ -549,6 +599,89 @@ class _NoTagsHint extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 手机上的列名标签条。
+///
+/// 翻页模式下每屏只看得见一列，没有这条就不知道自己在哪一列、
+/// 也不知道总共有几列。
+class _ColumnTabs extends StatelessWidget {
+  final List<_ColumnData> columns;
+  final int current;
+  final ValueChanged<int> onTap;
+
+  const _ColumnTabs({
+    required this.columns,
+    required this.current,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final k = theme.kanban;
+
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: k.hairline)),
+      ),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        itemCount: columns.length,
+        itemBuilder: (context, i) {
+          final column = columns[i];
+          final selected = i == current;
+          final accent = column.tag == null
+              ? k.cardBody
+              : k.accent(column.tag!.color);
+
+          return InkWell(
+            onTap: () => onTap(i),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected ? accent : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    column.tag?.name ?? '未分类',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: selected ? null : k.cardBody,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${column.cards.length}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: k.cardBody,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

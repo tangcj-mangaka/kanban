@@ -6,6 +6,7 @@ import '../../data/database.dart';
 import '../../providers.dart';
 import '../boards/board_dialogs.dart';
 import '../format.dart';
+import '../responsive.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
 import 'attachment_section.dart';
@@ -70,16 +71,17 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
       _titleInitialized = true;
     }
 
-    final screen = MediaQuery.sizeOf(context);
+    final compact = isCompact(context);
 
     return Dialog(
       backgroundColor: theme.colorScheme.surface,
+      insetPadding: EdgeInsets.all(compact ? 12 : 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: SizedBox(
-        width: 760,
-        height: (screen.height * 0.86).clamp(420.0, 760.0),
+        width: dialogWidth(context, 760),
+        height: dialogHeight(context),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 16, 14, 16),
+          padding: EdgeInsets.fromLTRB(compact ? 14 : 22, 16, compact ? 8 : 14, 16),
           child: SingleChildScrollView(
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

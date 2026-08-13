@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  允许明文 HTTP / WebSocket。
+
+  同步服务端是用户自己那台局域网机器，地址由用户在设置里填，事先不知道，
+  所以没法按域名逐个放行。而 Android 9 起默认禁止明文流量——不配这个，
+  正式版在手机上连不上任何东西，而且报的是一个跟网络无关的错。
+
+  这和设计文档 §9.4 是同一个取舍：局域网 + 个人使用不上 TLS。
+  以后真上公网时，这里要连同 §9.4 一起重新评估。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

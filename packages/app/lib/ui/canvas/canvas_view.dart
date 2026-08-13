@@ -102,6 +102,12 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                         behavior: HitTestBehavior.opaque,
                         onTap: _commitTitle,
                         onDoubleTapDown: _onCanvasDoubleTap,
+                        // 触控：双指捏合缩放、拖空白处平移。
+                        //
+                        // 手机上没有滚轮也没有空格键，缩放平移只能靠手势。
+                        // 桌面端也顺带受益——拖空白处平移比按住空格更直觉。
+                        onScaleStart: _onScaleStart,
+                        onScaleUpdate: _onScaleUpdate,
                         child: CustomPaint(
                           painter: GridPainter(
                             transform: _t,
@@ -204,6 +210,26 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
       // 触控板捏合。
       setState(() => _t = _t.zoomBy(event.scale, event.localPosition));
     }
+  }
+
+  // 手势缩放平移的起始状态
+  double _gestureStartScale = 1;
+  Offset _gestureLastFocal = Offset.zero;
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _gestureStartScale = _t.scale;
+    _gestureLastFocal = d.localFocalPoint;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    setState(() {
+      // 缩放以两指中点为锚，跟着手指走；单指时 scale 恒为 1，只走平移。
+      if (d.scale != 1.0) {
+        _t = _t.zoomTo(_gestureStartScale * d.scale, d.localFocalPoint);
+      }
+      _t = _t.panBy(d.localFocalPoint - _gestureLastFocal);
+      _gestureLastFocal = d.localFocalPoint;
+    });
   }
 
   void _onPointerDown(PointerDownEvent event) {

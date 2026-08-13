@@ -6,6 +6,7 @@ import '../../data/database.dart';
 import '../../data/repository.dart';
 import '../../providers.dart';
 import '../format.dart';
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 import '../board/board_page.dart';
 import '../sync/sync_status_chip.dart';
@@ -78,8 +79,11 @@ class _Header extends ConsumerWidget {
     final theme = Theme.of(context);
     final mode = ref.watch(themeModeProvider);
 
+    final compact = isCompact(context);
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(28, 22, 28, 18),
+      padding: EdgeInsets.fromLTRB(compact ? 16 : 28, compact ? 14 : 22,
+          compact ? 12 : 28, compact ? 12 : 18),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: theme.kanban.hairline)),
       ),
@@ -113,16 +117,24 @@ class _Header extends ConsumerWidget {
                 }),
               ),
               const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: onCreate,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('新建看板'),
-              ),
+              // 窄屏放不下文字，只留图标。
+              if (compact)
+                IconButton.filled(
+                  tooltip: '新建看板',
+                  onPressed: onCreate,
+                  icon: const Icon(Icons.add, size: 20),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: onCreate,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('新建看板'),
+                ),
             ],
           ),
           const SizedBox(height: 16),
           SizedBox(
-            width: 340,
+            width: compact ? double.infinity : 340,
             child: TextField(
               onChanged: onSearch,
               decoration: const InputDecoration(
@@ -160,7 +172,7 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: const EdgeInsets.all(28),
+      padding: EdgeInsets.all(isCompact(context) ? 16 : 28),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 260,
         childAspectRatio: 1.75,

@@ -372,11 +372,23 @@ class AppDatabase extends _$AppDatabase {
     final placeholders = List.filled(values.length, '?').join(', ');
     final pk = table.$primaryKey.map((c) => c.name).join(', ');
 
-    await customStatement(
+    // **必须用 customUpdate 并声明 updates。**
+    //
+    // customStatement 执行的是裸 SQL，drift 无从知道它改了哪张表，
+    // 于是不会通知任何查询流——结果是每一条 op 都正确落库，但界面
+    // 一动不动，只显示启动那一刻的数据。本地编辑和同步过来的改动
+    // 全都看不见。
+    //
+    // 这个 bug 藏了很久：之前的截图都是「先用脚本灌数据、再启动应用」，
+    // 读的是启动快照；测试里用的是 .first，每次都新建查询。两种方式
+    // 都照不出「流不发新值」。
+    await customUpdate(
       'INSERT INTO ${table.actualTableName} ($cols) VALUES ($placeholders) '
       'ON CONFLICT($pk) DO UPDATE SET '
       '${column.name} = excluded.${column.name}',
-      values.values.toList(),
+      variables: [for (final v in values.values) Variable(v)],
+      updates: {table},
+      updateKind: UpdateKind.insert,
     );
   }
 

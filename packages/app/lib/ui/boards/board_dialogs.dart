@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../responsive.dart';
 import '../theme/app_theme.dart';
 import '../theme/palette.dart';
 
@@ -15,7 +16,7 @@ Future<String?> promptName(
     builder: (context) => AlertDialog(
       title: Text(title),
       content: SizedBox(
-        width: 320,
+        width: dialogWidth(context, 320),
         child: TextField(
           controller: controller,
           autofocus: true,
@@ -49,7 +50,7 @@ Future<String?> pickSwatch(BuildContext context, {String? current}) {
       return AlertDialog(
         title: const Text('选择颜色'),
         content: SizedBox(
-          width: 328,
+          width: dialogWidth(context, 328),
           child: Wrap(
             spacing: 10,
             runSpacing: 10,
