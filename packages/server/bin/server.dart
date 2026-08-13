@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,8 @@ import 'package:server/src/autostart.dart';
 import 'package:server/src/backup.dart';
 import 'package:server/src/control_page.dart';
 import 'package:server/src/discovery.dart';
+import 'package:server/src/file_endpoints.dart';
+import 'package:server/src/file_store.dart';
 import 'package:server/src/store.dart';
 import 'package:server/src/sync_server.dart';
 import 'package:server/src/terminal_qr.dart';
@@ -46,9 +49,14 @@ Future<void> main(List<String> args) async {
 
   final store = Store.open(p.join(dataDir, 'kanban-server.sqlite'));
   final sync = SyncServer(store, onLog: _log);
+  final files = FileStore(dataDir);
+
+  // 写到一半留下的临时文件在这里清掉。
+  final staleTemp = await files.cleanTemp();
+  if (staleTemp > 0) _log('清理了 $staleTemp 个残留的临时文件');
 
   final server = await io.serve(
-    const Pipeline().addHandler(_router(sync, store, dataDir, port)),
+    const Pipeline().addHandler(_router(sync, store, files, dataDir, port)),
     InternetAddress.anyIPv4,
     port,
   );
@@ -56,6 +64,21 @@ Future<void> main(List<String> args) async {
   _log('数据目录 $dataDir');
   _log('已有 ${store.opCount} 条操作记录，最大序号 ${store.maxSeq}');
   _log('已配对设备 ${store.devices.length} 台');
+  _log('附件 ${files.fileCount} 个，共 ${_humanBytes(files.totalBytes)}');
+
+  // 附件回收：启动时跑一次，之后每天一次。
+  Future<void> collectFiles() async {
+    final due = store.sweepOrphans(files.allHashes(), store.referencedHashes());
+    var removed = 0;
+    for (final hash in due) {
+      if (await files.delete(hash)) removed++;
+      store.forgetOrphan(hash);
+    }
+    if (removed > 0) _log('回收了 $removed 个没人引用的附件');
+  }
+
+  await collectFiles();
+  Timer.periodic(const Duration(hours: 24), (_) => collectFiles());
   _log('监听 ${server.address.address}:${server.port}');
 
   final serverName = opts.option('name') ?? Platform.localHostname;
@@ -95,13 +118,24 @@ Future<void> main(List<String> args) async {
 // 路由
 // ---------------------------------------------------------------------------
 
-Handler _router(SyncServer sync, Store store, String dataDir, int port) {
+Handler _router(
+  SyncServer sync,
+  Store store,
+  FileStore files,
+  String dataDir,
+  int port,
+) {
   final ws = sync.handler;
 
   return (Request request) async {
     final path = request.url.path;
 
     if (path == 'sync') return ws(request);
+
+    // 附件走独立的 HTTP 通道——文件不能塞进 WebSocket 的 JSON 消息里。
+    if (path == 'files' || path.startsWith('files/')) {
+      return handleFileRequest(request, store, files);
+    }
 
     if (path == 'info') {
       // 供体检用，不需要配对就能看，只暴露非敏感信息。
@@ -110,6 +144,8 @@ Handler _router(SyncServer sync, Store store, String dataDir, int port) {
         'online': sync.onlineCount,
         'devices': store.devices.length,
         'seq': store.maxSeq,
+        'files': files.fileCount,
+        'file_bytes': files.totalBytes,
       });
     }
 
@@ -186,6 +222,15 @@ Handler _router(SyncServer sync, Store store, String dataDir, int port) {
         return Response.notFound('kanban server');
     }
   };
+}
+
+String _humanBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
 
 Future<Map<String, Object?>> _body(Request request) async {

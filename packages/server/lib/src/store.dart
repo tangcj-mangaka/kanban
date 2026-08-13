@@ -67,6 +67,14 @@ class Store {
       )
     ''');
 
+    // 已经没人引用、正在等待延迟删除的文件。
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS orphan_files (
+        hash  TEXT PRIMARY KEY,
+        since INTEGER NOT NULL
+      )
+    ''');
+
     _db.execute('''
       CREATE TABLE IF NOT EXISTS meta (
         key   TEXT PRIMARY KEY,
@@ -204,8 +212,111 @@ class Store {
   }
 
   // -------------------------------------------------------------------------
+  // 附件文件的引用关系
+  // -------------------------------------------------------------------------
+
+  /// 仍被引用的文件哈希。
+  ///
+  /// **这是服务端唯一一处需要看懂数据语义的地方。** 别处它只管分配序号和
+  /// 广播，从不理解什么是卡片、什么是标签。这里破例，是因为磁盘回收是
+  /// 服务端自己的职责——它得知道哪些文件还有人要，否则要么永远不删（磁盘
+  /// 撑爆），要么删错（附件凭空消失）。
+  ///
+  /// 做法仍然只依赖 op log：对每个附件实体取每个字段最新的那条 op，
+  /// 未被标删的实体，它的 hash 和 thumb_hash 就是还在用的。
+  Set<String> referencedHashes() {
+    final rows = _db.select('''
+      WITH ranked AS (
+        SELECT entity_id, field, value_json,
+               ROW_NUMBER() OVER (
+                 PARTITION BY entity_id, field ORDER BY seq DESC
+               ) AS rn
+        FROM ops WHERE entity = 'attachment'
+      ),
+      latest AS (
+        SELECT entity_id, field, value_json FROM ranked WHERE rn = 1
+      )
+      SELECT l.value_json AS v FROM latest l
+      WHERE l.field IN ('hash', 'thumb_hash')
+        AND COALESCE(
+              (SELECT d.value_json FROM latest d
+               WHERE d.entity_id = l.entity_id AND d.field = 'deleted'),
+              'false'
+            ) != 'true'
+    ''');
+
+    final hashes = <String>{};
+    for (final r in rows) {
+      final decoded = jsonDecode(r['v'] as String);
+      if (decoded is String && decoded.isNotEmpty) hashes.add(decoded);
+    }
+    return hashes;
+  }
+
+  /// 记录/更新孤儿文件，并返回该删的那些。
+  ///
+  /// **不立即删除**：卡片删了三十天内还能后悔，那时文件还在，恢复卡片就能
+  /// 连附件一起回来。真正的删除延迟到 [after] 之后。
+  List<String> sweepOrphans(
+    Set<String> onDisk,
+    Set<String> referenced, {
+    Duration after = const Duration(days: 30),
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    _db.execute('BEGIN');
+    try {
+      // 又被引用上的，撤销孤儿标记（比如卡片被捞回来了）
+      for (final hash in referenced) {
+        _db.execute('DELETE FROM orphan_files WHERE hash = ?', [hash]);
+      }
+      // 新变成孤儿的，记下时间
+      for (final hash in onDisk.difference(referenced)) {
+        _db.execute(
+          'INSERT INTO orphan_files (hash, since) VALUES (?, ?) '
+          'ON CONFLICT(hash) DO NOTHING',
+          [hash, now],
+        );
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+
+    final cutoff = now - after.inMilliseconds;
+    final due = _db.select(
+      'SELECT hash FROM orphan_files WHERE since <= ?',
+      [cutoff],
+    );
+    return [for (final r in due) r['hash'] as String];
+  }
+
+  void forgetOrphan(String hash) {
+    _db.execute('DELETE FROM orphan_files WHERE hash = ?', [hash]);
+  }
+
+  int get orphanCount =>
+      _db.select('SELECT COUNT(*) AS c FROM orphan_files').first['c'] as int;
+
+  // -------------------------------------------------------------------------
   // 设备
   // -------------------------------------------------------------------------
+
+  /// 按令牌找设备。HTTP 接口（附件上传下载）用它鉴权。
+  Device? deviceByToken(String token) {
+    if (token.isEmpty) return null;
+    final rows = _db.select('SELECT * FROM devices WHERE token = ?', [token]);
+    if (rows.isEmpty) return null;
+    final r = rows.first;
+    return Device(
+      id: r['id'] as String,
+      name: r['name'] as String,
+      token: r['token'] as String,
+      pairedAt: r['paired_at'] as int,
+      lastSeen: r['last_seen'] as int,
+    );
+  }
 
   List<Device> get devices {
     final rows = _db.select('SELECT * FROM devices ORDER BY paired_at ASC');
