@@ -63,11 +63,11 @@ class CanvasCard extends StatelessWidget {
     final theme = Theme.of(context);
     final k = theme.kanban;
 
-    // 折叠时收起封面图。折叠态的意思就是「只看个标题」，
-    // 留着一张大图就没有折叠可言了。
-    final coverHash = card.collapsed
-        ? null
-        : (cover?.thumbHash ?? cover?.hash);
+    // 封面图**一直显示**，折叠与否都不影响。
+    //
+    // 折叠只管正文长短：图是这张卡片一眼就能认出来的东西，藏起来的话
+    // 画布上一排卡片全靠读标题分辨，等于白加了封面。
+    final coverHash = cover?.thumbHash ?? cover?.hash;
 
     return AnimatedScale(
       scale: dragging ? 1.02 : 1,
@@ -115,8 +115,10 @@ class CanvasCard extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 4),
                 child: Text(
                   card.body,
-                  // 折叠态只给两行，画布上才看得清全局；展开看全文。
-                  maxLines: card.collapsed ? 2 : null,
+                  // 折叠态给三行。再多画布上就成了一堵字墙，
+                  // 想看全文点展开。标题不截断——标题短，而且它是
+                  // 在一堆卡片里认出这张的主要依据。
+                  maxLines: card.collapsed ? 3 : null,
                   overflow: card.collapsed ? TextOverflow.ellipsis : null,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: k.cardBody,

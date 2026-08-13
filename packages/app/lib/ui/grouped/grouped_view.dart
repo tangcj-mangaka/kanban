@@ -489,8 +489,6 @@ class _GroupedCardTile extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       card.title.isEmpty ? '未命名' : card.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: card.title.isEmpty
                             ? k.cardBody.withValues(alpha: 0.6)
@@ -540,7 +538,7 @@ class _GroupedCardTile extends ConsumerWidget {
                   padding: const EdgeInsets.only(right: 4),
                   child: Text(
                     card.body,
-                    maxLines: 2,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: k.cardBody,

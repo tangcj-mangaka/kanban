@@ -120,14 +120,28 @@ void main() {
         final (title, body) = pool[i % pool.length];
         final cardId = await repo.createCard(
           boardId: boardId,
-          x: 40 + rand.nextDouble() * 700,
-          y: 40 + rand.nextDouble() * 420,
+          // 排成两列的网格，不随机撒。
+          //
+          // 原来是随机坐标，结果每次截图卡片都互相压着，想看清某个
+          // 状态还得先找哪张没被盖住——验证界面时非常碍事。
+          x: 40 + (i % 2) * 300,
+          y: 40 + (i ~/ 2) * 260,
           title: title,
           colorKey: rand.nextInt(4) == 0
               ? null
               : kSwatchKeys[rand.nextInt(kSwatchKeys.length)],
         );
-        await repo.setCardField(boardId, cardId, CardF.body, body);
+        // 每块板留一张长正文的卡片，用来验证折叠态截到三行。
+        await repo.setCardField(
+          boardId,
+          cardId,
+          CardF.body,
+          i == 2
+              ? '$body。这段是特意写长的，用来看折叠状态下正文截到第三行是什么'
+                    '效果，后面这些字在画布上应该看不到，要点展开才会全部显示'
+                    '出来，不然一张卡片能占掉半个屏幕。'
+              : body,
+        );
 
         if (tagIds.isNotEmpty && rand.nextInt(4) != 0) {
           await repo.setCardTag(
@@ -144,14 +158,6 @@ void main() {
         // 每块板的第二张卡片配一张图，用来验证封面。
         if (i == 1) {
           await _attachDemoImage(db, repo, boardId, cardId, rand);
-          // 有图的卡片默认展开，不然封面被折叠态藏起来了。
-          await repo.setCardField(
-            boardId,
-            cardId,
-            CardF.collapsed,
-            false,
-            touch: false,
-          );
         }
       }
     }
