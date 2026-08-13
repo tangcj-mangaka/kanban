@@ -50,9 +50,21 @@ jobs:
           # 下面每一步都单独报错。原来只有一句 base64 的原始报错，
           # 出问题时看不出到底是哪个 secret 填错了。
           KEYSTORE=packages/app/android/app/release.jks
-          if ! echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE" 2>/dev/null; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 解不开。"
-            echo "::error::重新生成：base64 -i ~/kanban-release.jks | pbcopy，整段粘贴，别带多余字符。"
+          # 先把所有空白字符去掉再解码。
+          #
+          # 从终端里用鼠标选中复制时，很容易把终端按窗口宽度折行产生的
+          # 换行、或者行尾的空格一起带进来——那些字符不属于 base64，
+          # 解码会直接失败。真正的 base64 里本来就没有空白，删掉是安全的。
+          CLEANED=$(printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]')
+          if ! printf '%s' "$CLEANED" | base64 -d > "$KEYSTORE" 2>/dev/null; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 解不开（去掉空白后仍然不是合法 base64）。"
+            echo "::error::长度 ${#CLEANED} 字符，开头：$(printf '%s' "$CLEANED" | head -c 8)"
+            echo "::error::重新生成的办法见 README「安卓客户端的签名」一节。"
+            exit 1
+          fi
+          # 空文件也算「解开了」，得单独拦一道。
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 解出来是空的。"
             exit 1
           fi
 

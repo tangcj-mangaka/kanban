@@ -144,14 +144,30 @@ keytool -genkeypair -v -keystore kanban-release.jks -storetype PKCS12 \
   -keyalg RSA -keysize 2048 -validity 10000 -alias kanban
 ```
 
-然后把 keystore 转成 base64（`base64 -i kanban-release.jks | pbcopy`），
-在 GitHub 仓库的 Settings → Secrets and variables → Actions 里加四个 secret：
+然后把 keystore 转成 base64。**用 `pbcopy` 直接进剪贴板，不要用鼠标从终端里
+选中复制**——终端会按窗口宽度折行，选中时容易把折行和行尾空格一起带进去，
+粘出来就不是合法的 base64 了（CI 会去掉空白再解码，但带进别的字符就没救了）：
+
+```bash
+base64 -i ~/kanban-release.jks > /tmp/ks.b64
+
+# 自检：解回来必须和原文件一模一样
+base64 -d -i /tmp/ks.b64 -o /tmp/ks-check.jks \
+  && cmp ~/kanban-release.jks /tmp/ks-check.jks \
+  && echo "OK，$(wc -c < /tmp/ks.b64) 字符" \
+  || echo "有问题，别往下走"
+
+pbcopy < /tmp/ks.b64
+```
+
+看到 `OK，xxxx 字符` 再往下。然后在 GitHub 仓库的
+Settings → Secrets and variables → Actions 里加四个 secret：
 
 | 名字 | 内容 |
 |---|---|
 | `ANDROID_KEYSTORE_BASE64` | 上一步的 base64 |
 | `ANDROID_STORE_PASSWORD` | keystore 密码 |
-| `ANDROID_KEY_PASSWORD` | key 密码（一般同上） |
+| `ANDROID_KEY_PASSWORD` | key 密码。**PKCS12 格式下必须和上面一样**；留空的话 CI 会自动用 store 密码 |
 | `ANDROID_KEY_ALIAS` | `kanban` |
 
 配好之后 CI 自动改用正式签名，以后升级直接覆盖安装。
