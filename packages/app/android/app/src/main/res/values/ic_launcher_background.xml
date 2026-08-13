@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 图标底色，和 kAppIconBackground 保持一致。 -->
+    <color name="ic_launcher_background">#EDE6DD</color>
+</resources>

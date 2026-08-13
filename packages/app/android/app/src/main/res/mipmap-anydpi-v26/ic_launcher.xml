@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  安卓 8（API 26）以上的自适应图标。
+
+  系统把 background 和 foreground 当成两层，按各家厂商的形状（圆、方角、
+  水滴）一起裁切，还能在长按时做视差动效。低于 API 26 的设备看不到这个
+  文件，走 mipmap-*/ic_launcher.png 那套方图标。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

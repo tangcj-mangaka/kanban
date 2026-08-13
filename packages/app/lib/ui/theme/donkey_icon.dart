@@ -27,6 +27,31 @@ class DonkeyIcon extends StatelessWidget {
   }
 }
 
+/// 应用图标的底色。就是配色页上那版「浅底叼草」的底。
+const kAppIconBackground = Color(0xFFEDE6DD);
+
+/// 把驴画到 [canvas] 上，占据 [size] × [size] 的方形区域。
+///
+/// 单独暴露出来是为了让**生成启动图标的脚本**和应用内的插画共用同一份
+/// 画法。分成两份代码的话，迟早会改了一处忘了另一处，然后桌面图标和
+/// 应用里的驴长得不一样。
+void paintDonkey(Canvas canvas, double size, {bool withStraw = true}) {
+  _DonkeyPainter(withStraw: withStraw).paint(canvas, Size(size, size));
+}
+
+/// 画完整的应用图标：圆角底 + 驴。
+void paintAppIcon(Canvas canvas, double size) {
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, size, size),
+      // 原图 64 的画板上圆角是 14，等比例放大。
+      Radius.circular(size * 14 / 64),
+    ),
+    Paint()..color = kAppIconBackground,
+  );
+  paintDonkey(canvas, size);
+}
+
 class _DonkeyPainter extends CustomPainter {
   final bool withStraw;
 
