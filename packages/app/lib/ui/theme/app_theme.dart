@@ -37,6 +37,26 @@ class KanbanColors extends ThemeExtension<KanbanColors> {
 
   bool get isDark => brightness == Brightness.dark;
 
+  /// 已完成卡片的底色和边框。
+  ///
+  /// 完成态**盖掉**卡片本来的颜色——卡片色是用来分类的，而「做完了」
+  /// 要一眼扫出来，两者叠在一起谁都看不清。
+  Color get doneSurface =>
+      isDark ? const Color(0xFF3A2A2C) : const Color(0xFFFBEAE9);
+
+  /// 边框和勾选框的实色。带 alpha 是给边框用的，勾选框会把它调到不透明。
+  Color get doneBorder =>
+      isDark ? const Color(0x66FF8A80) : const Color(0x55C1613A);
+
+  /// 完成卡片左边那道色条。
+  ///
+  /// **光靠淡红底色是不够的**：色板里本来就有「红」(#FFE0DC) 和
+  /// 「粉」(#FDDCEA) 两种卡片色，和完成态的淡红几乎一个色，
+  /// 一眼扫过去分不出「这张做完了」和「这张是粉色的」。
+  /// 色条是实色竖杠，色板不会产生这种形状，才真的区分得开。
+  Color get doneStripe =>
+      isDark ? const Color(0xFFFF9C90) : const Color(0xFFD93A2B);
+
   /// 卡片底色。[key] 为 null 表示无色卡片。
   Color cardSurface(String? key) {
     if (key == null) return cardPlain;

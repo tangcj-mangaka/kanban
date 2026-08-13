@@ -66,9 +66,13 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: _globalSearch.isNotEmpty
-          ? BoardListPage(initialQuery: _globalSearch)
-          : const _FirstBoardCanvas(),
+      home: _narrow(
+        _globalSearch.isNotEmpty
+            ? BoardListPage(initialQuery: _globalSearch)
+            : _showList
+            ? const BoardListPage()
+            : const _FirstBoardCanvas(),
+      ),
     );
   }
 }
@@ -98,10 +102,38 @@ const _boardSearch = String.fromEnvironment('BOARD_SEARCH');
 /// `--dart-define=FOCUS=1` 时进来就定位到第一个命中。
 const _focusFirst = bool.fromEnvironment('FOCUS');
 
+/// `--dart-define=LIST=true` 时停在看板列表页而不是直接进第一块看板。
+const _showList = bool.fromEnvironment('LIST');
+
+/// `--dart-define=WIDTH=420` 时把界面挤成这么宽，用来在电脑上验手机布局。
+///
+/// 比改原生窗口尺寸靠谱：`isCompact` 看的是 MediaQuery 里的宽度，
+/// 这里连 MediaQuery 一起改掉，响应式分支才会真的按窄屏那条走。
+const _forceWidth = int.fromEnvironment('WIDTH');
+
 /// `--dart-define=THEME=dark|light` 时强制主题。
 ///
 /// 截图验证深色主题时不用去改系统外观——那会动用户的机器设置。
 const _forceTheme = String.fromEnvironment('THEME');
+
+/// 把 [child] 关进一个假装只有 [_forceWidth] 宽的视口里。
+Widget _narrow(Widget child) {
+  if (_forceWidth <= 0) return child;
+  return Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(
+      width: _forceWidth.toDouble(),
+      child: Builder(
+        builder: (context) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            size: Size(_forceWidth.toDouble(), MediaQuery.sizeOf(context).height),
+          ),
+          child: child,
+        ),
+      ),
+    ),
+  );
+}
 
 class _FirstBoardCanvas extends ConsumerStatefulWidget {
   const _FirstBoardCanvas();

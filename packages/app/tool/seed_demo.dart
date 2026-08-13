@@ -17,12 +17,24 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanban/data/database.dart';
 import 'package:kanban/data/repository.dart';
+import 'package:image/image.dart' as img;
+import 'package:kanban/sync/attachment_store.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared/shared.dart';
 
 /// macOS 上应用是沙盒的，库在容器里。
 String get _dbPath {
   final home = Platform.environment['HOME'];
   return '$home/Library/Containers/com.tangcj.kanban/Data/Documents/kanban.sqlite';
+}
+
+/// 附件缓存目录，和应用里 bootstrap 用的是同一处。
+Directory get _cacheDir {
+  final home = Platform.environment['HOME'];
+  return Directory(
+    '$home/Library/Containers/com.tangcj.kanban/Data/Library/Application Support/'
+    'com.tangcj.kanban/attachments',
+  );
 }
 
 void main() {
@@ -125,6 +137,22 @@ void main() {
             on: true,
           );
         }
+
+        // 每块板上勾掉一张，好在截图里看到完成态。
+        if (i == 0) await repo.toggleCardDone(boardId, cardId, true);
+
+        // 每块板的第二张卡片配一张图，用来验证封面。
+        if (i == 1) {
+          await _attachDemoImage(db, repo, boardId, cardId, rand);
+          // 有图的卡片默认展开，不然封面被折叠态藏起来了。
+          await repo.setCardField(
+            boardId,
+            cardId,
+            CardF.collapsed,
+            false,
+            touch: false,
+          );
+        }
       }
     }
 
@@ -135,4 +163,66 @@ void main() {
 
     await db.close();
   });
+}
+
+/// 生成一张纯色渐变小图当演示附件。
+///
+/// 不从磁盘找现成图片：那样脚本就依赖某台机器上有什么文件，
+/// 换台机器跑就挂了。
+Future<void> _attachDemoImage(
+  AppDatabase db,
+  Repository repo,
+  String boardId,
+  String cardId,
+  Random rand,
+) async {
+  const w = 320;
+  const h = 200;
+  final image = img.Image(width: w, height: h);
+  final hue = rand.nextInt(360);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final t = x / w;
+      final v = 0.55 + 0.35 * (y / h);
+      final rgb = _hsvToRgb((hue + t * 60) % 360, 0.45, v);
+      image.setPixelRgb(x, y, rgb.$1, rgb.$2, rgb.$3);
+    }
+  }
+
+  final bytes = img.encodePng(image);
+  final dir = Directory(p.join(Directory.systemTemp.path, 'kanban-seed'));
+  await dir.create(recursive: true);
+  final file = File(p.join(dir.path, 'demo-$cardId.png'));
+  await file.writeAsBytes(bytes);
+
+  final store = AttachmentStore(db, _cacheDir);
+  final imported = await store.importFile(file);
+  await repo.addAttachment(
+    boardId: boardId,
+    cardId: cardId,
+    hash: imported.hash,
+    filename: '示例图片.png',
+    size: imported.size,
+    mime: imported.mime,
+    thumbHash: imported.thumbHash,
+  );
+}
+
+(int, int, int) _hsvToRgb(double hDeg, double s, double v) {
+  final c = v * s;
+  final x = c * (1 - ((hDeg / 60) % 2 - 1).abs());
+  final m = v - c;
+  final (r, g, b) = switch (hDeg ~/ 60) {
+    0 => (c, x, 0.0),
+    1 => (x, c, 0.0),
+    2 => (0.0, c, x),
+    3 => (0.0, x, c),
+    4 => (x, 0.0, c),
+    _ => (c, 0.0, x),
+  };
+  return (
+    ((r + m) * 255).round(),
+    ((g + m) * 255).round(),
+    ((b + m) * 255).round(),
+  );
 }

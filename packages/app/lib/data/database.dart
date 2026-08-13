@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -62,6 +62,13 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) await m.createTable(settings);
       // v3：加了附件的本机缓存表。
       if (from < 3) await m.createTable(fileCaches);
+      // v4：卡片加了「完成」勾。
+      if (from < 4) {
+        await m.addColumn(cards, cards.done);
+        // 升级前收到过的 done op 当时被当成未知字段跳过了（那会儿还没这一列）。
+        // 不补这一下，别的设备上勾好的卡片在这台上会永远是没勾的。
+        await _replayField(Entity.card, CardF.done);
+      }
     },
   );
 
@@ -141,6 +148,7 @@ class AppDatabase extends _$AppDatabase {
       CardF.width: cards.width,
       CardF.z: cards.z,
       CardF.collapsed: cards.collapsed,
+      CardF.done: cards.done,
       CardF.archived: cards.archived,
       CardF.createdAt: cards.createdAt,
       CardF.updatedAt: cards.updatedAt,
@@ -254,6 +262,18 @@ class AppDatabase extends _$AppDatabase {
         return false;
       }
 
+      // 不认识的字段：**照常记进 op 日志、照常算作已处理**，只是不往
+      // 物化表里写，也不更新 fieldSeqs。
+      //
+      // 这是版本不一致而不是错误——新版设备加了字段，这台还不认识。
+      // 以前这里是直接抛异常的，后果很重：旧设备收到这条 op 就失败、
+      // lastSeq 推不动、重连后服务器再发一遍、再失败，同步**永久卡死**，
+      // 而界面上只显示「连接中」，看不出任何原因。
+      //
+      // fieldSeqs 也不更新，是为了让这台设备升级之后还能把这条补上——
+      // 见 [_replayField]，加列的迁移会重放日志。
+      if (!_canMaterialize(op)) return true;
+
       await _writeField(op);
 
       await into(fieldSeqs).insertOnConflictUpdate(
@@ -267,6 +287,27 @@ class AppDatabase extends _$AppDatabase {
 
       return true;
     });
+  }
+
+  /// 这个 op 的字段能不能落到物化表上。
+  bool _canMaterialize(Op op) =>
+      _tables[op.entity] != null && _columns[op.entity]?[op.field] != null;
+
+  /// 把日志里某个字段的 op 全部重放一遍。
+  ///
+  /// 加新列的迁移要调它：这台设备升级前收到过的该字段 op 都被跳过了
+  /// （那时还没有这一列），升级后得把它们补上，否则别的设备上勾好的
+  /// 卡片，在这台上永远是没勾的。
+  Future<void> _replayField(String entity, String field) async {
+    final rows =
+        await (select(ops)
+              ..where((o) => o.entity.equals(entity) & o.field.equals(field)))
+            .get();
+
+    final entityIds = {for (final r in rows) r.entityId};
+    for (final id in entityIds) {
+      await recomputeField(id, field);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -407,6 +448,15 @@ class AppDatabase extends _$AppDatabase {
     required String field,
     required Object? value,
   }) async {
+    // 本机自己写错字段名是 bug，得当场炸出来。
+    //
+    // [applyOp] 对未知字段是宽容的，但那条规则是给**远端**来的 op 用的
+    // （版本不一致），不该顺带把本地的拼写错误也咽下去——那种错误
+    // 悄悄丢一条 op，等发现时数据已经不对了。
+    if (_columns[entity]?[field] == null) {
+      throw ArgumentError('未知字段：$entity.$field');
+    }
+
     await applyOp(
       Op(
         opId: _uuid.v4(),

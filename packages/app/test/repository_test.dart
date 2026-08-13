@@ -408,4 +408,154 @@ void main() {
       );
     });
   });
+  group('打勾完成', () {
+    test('打勾不改「最近修改」时间', () async {
+      // 打勾是状态变化不是内容改动，不该让卡片在最近修改里往上跳——
+      // 和挪位置、折叠一类。
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      final before = (await card(id)).updatedAt;
+
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await repo.toggleCardDone(boardId, id, true);
+
+      expect((await card(id)).done, isTrue);
+      expect((await card(id)).updatedAt, before);
+    });
+
+    test('可以取消打勾', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      await repo.toggleCardDone(boardId, id, true);
+      await repo.toggleCardDone(boardId, id, false);
+      expect((await card(id)).done, isFalse);
+    });
+
+    test('新建的卡片默认没打勾', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      expect((await card(id)).done, isFalse);
+    });
+
+    test('打勾不归档，卡片仍留在画布上', () async {
+      // 这是用户明确要的：完成和归档是两件事，收进干草仓库由他自己决定。
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      await repo.toggleCardDone(boardId, id, true);
+
+      final onCanvas = await repo.watchCanvasCards(boardId).first;
+      expect(onCanvas.map((c) => c.id), contains(id));
+      expect((await card(id)).archived, isFalse);
+    });
+
+    test('打勾不改变卡片位置', () async {
+      final boardId = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: boardId, x: 120, y: 340);
+      await repo.toggleCardDone(boardId, id, true);
+
+      final c = await card(id);
+      expect(c.x, 120);
+      expect(c.y, 340);
+    });
+  });
+  group('卡片封面图', () {
+    Future<void> attach(
+      String boardId,
+      String cardId, {
+      required String id,
+      required String mime,
+      required int createdAt,
+      String? thumbHash,
+    }) async {
+      await db.emitBatch(
+        [
+          (field: AttachmentF.cardId, value: cardId),
+          (field: AttachmentF.hash, value: 'hash-$id'),
+          (field: AttachmentF.thumbHash, value: thumbHash),
+          (field: AttachmentF.filename, value: '$id.bin'),
+          (field: AttachmentF.mime, value: mime),
+          (field: AttachmentF.createdAt, value: createdAt),
+        ],
+        boardId: boardId,
+        entity: Entity.attachment,
+        entityId: id,
+      );
+    }
+
+    test('取第一张图片当封面，按添加时间算', () async {
+      final b = await repo.createBoard(name: 'B');
+      final c = await repo.createCard(boardId: b, x: 0, y: 0);
+      await attach(b, c, id: 'a2', mime: 'image/png', createdAt: 200);
+      await attach(b, c, id: 'a1', mime: 'image/png', createdAt: 100);
+
+      final covers = await repo.watchCardCovers(b).first;
+      expect(covers[c]?.id, 'a1', reason: '最早添加的那张才是封面');
+    });
+
+    test('文档类附件不当封面', () async {
+      // 拿文件名当封面没有意义，只挑图片。
+      final b = await repo.createBoard(name: 'B');
+      final c = await repo.createCard(boardId: b, x: 0, y: 0);
+      await attach(b, c, id: 'doc', mime: 'application/pdf', createdAt: 100);
+
+      expect(await repo.watchCardCovers(b).first, isEmpty);
+    });
+
+    test('文档排在图片前面时，仍然挑到那张图', () async {
+      final b = await repo.createBoard(name: 'B');
+      final c = await repo.createCard(boardId: b, x: 0, y: 0);
+      await attach(b, c, id: 'doc', mime: 'application/pdf', createdAt: 100);
+      await attach(b, c, id: 'pic', mime: 'image/jpeg', createdAt: 200);
+
+      final covers = await repo.watchCardCovers(b).first;
+      expect(covers[c]?.id, 'pic');
+    });
+
+    test('删掉封面后换成下一张图', () async {
+      final b = await repo.createBoard(name: 'B');
+      final c = await repo.createCard(boardId: b, x: 0, y: 0);
+      await attach(b, c, id: 'first', mime: 'image/png', createdAt: 100);
+      await attach(b, c, id: 'second', mime: 'image/png', createdAt: 200);
+
+      await db.emit(
+        boardId: b,
+        entity: Entity.attachment,
+        entityId: 'first',
+        field: kDeleted,
+        value: true,
+      );
+
+      final covers = await repo.watchCardCovers(b).first;
+      expect(covers[c]?.id, 'second');
+    });
+
+    test('不同看板的封面不串', () async {
+      final b1 = await repo.createBoard(name: 'B1');
+      final b2 = await repo.createBoard(name: 'B2');
+      final c1 = await repo.createCard(boardId: b1, x: 0, y: 0);
+      final c2 = await repo.createCard(boardId: b2, x: 0, y: 0);
+      await attach(b1, c1, id: 'p1', mime: 'image/png', createdAt: 100);
+      await attach(b2, c2, id: 'p2', mime: 'image/png', createdAt: 100);
+
+      final covers1 = await repo.watchCardCovers(b1).first;
+      expect(covers1.keys, [c1]);
+    });
+
+    test('有缩略图时封面记录里带着它', () async {
+      // 画布上优先用缩略图：原图可能几 MB，画布上要同时显示几十张。
+      final b = await repo.createBoard(name: 'B');
+      final c = await repo.createCard(boardId: b, x: 0, y: 0);
+      await attach(
+        b,
+        c,
+        id: 'pic',
+        mime: 'image/png',
+        createdAt: 100,
+        thumbHash: '缩略图哈希',
+      );
+
+      final covers = await repo.watchCardCovers(b).first;
+      expect(covers[c]?.thumbHash, '缩略图哈希');
+    });
+  });
 }

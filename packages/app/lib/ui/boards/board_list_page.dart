@@ -196,8 +196,26 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
 
   @override
   Widget build(BuildContext context) {
+    // 手机上一行一个、高度由内容撑。
+    //
+    // 原来不分宽窄一律用网格，方块高度是「宽度 ÷ 1.75」算出来的：桌面上
+    // 宽 260、高约 148 装得下，手机上两列一分只剩 100 出头，标题 + 标签 +
+    // 张数 + 时间根本塞不进去，标签换到第二行就直接压在下面的文字上
+    // （Flutter 默认不裁剪，溢出的内容会画到别的东西上面）。
+    if (isCompact(context)) {
+      return ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: widget.boards.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        // 手机上不做拖动排序：长按拖拽会和列表滚动抢手势，
+        // 而排看板顺序是坐在电脑前才会干的事。
+        itemBuilder: (_, i) =>
+            _BoardTile(summary: widget.boards[i], compact: true),
+      );
+    }
+
     return GridView.builder(
-      padding: EdgeInsets.all(isCompact(context) ? 16 : 28),
+      padding: const EdgeInsets.all(28),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 260,
         childAspectRatio: 1.75,
@@ -296,7 +314,13 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
 class _BoardTile extends ConsumerStatefulWidget {
   final BoardSummary summary;
 
-  const _BoardTile({required this.summary});
+  /// 列表模式（手机）：高度由内容撑，不用 Expanded 占位。
+  ///
+  /// 网格模式下方块高度是固定的，用 Expanded 把张数和时间压到底边；
+  /// 列表模式下没有固定高度，Expanded 会因为约束无限而直接报错。
+  final bool compact;
+
+  const _BoardTile({required this.summary, this.compact = false});
 
   @override
   ConsumerState<_BoardTile> createState() => _BoardTileState();
@@ -312,6 +336,7 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
     final board = widget.summary.board;
     final surface = k.cardSurface(board.color);
     final accent = k.accent(board.color);
+    final compactTile = widget.compact;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -342,6 +367,9 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(15, 14, 9, 13),
               child: Column(
+                mainAxisSize: compactTile
+                    ? MainAxisSize.min
+                    : MainAxisSize.max,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -376,9 +404,15 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Expanded(
-                    child: _TagPreview(boardId: board.id),
-                  ),
+                  if (compactTile)
+                    _TagPreview(boardId: board.id)
+                  else
+                    // 网格模式下裁掉溢出的部分。标签多、方块窄的时候，
+                    // Wrap 会换行换出格子外——Flutter 默认不裁剪，
+                    // 溢出的标签会直接画到下面的张数和时间上。
+                    Expanded(
+                      child: ClipRect(child: _TagPreview(boardId: board.id)),
+                    ),
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: Text(

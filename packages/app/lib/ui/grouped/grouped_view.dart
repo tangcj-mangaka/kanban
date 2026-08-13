@@ -7,6 +7,8 @@ import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
 import '../responsive.dart';
+import '../attachment_image.dart';
+import '../done_box.dart';
 import '../theme/app_theme.dart';
 
 /// 列内排序方式。
@@ -74,6 +76,9 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
         const <String, List<String>>{};
     final commentCounts =
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
+    final covers =
+        ref.watch(cardCoversProvider(widget.boardId)).value ??
+        const <String, AttachmentRow>{};
 
     final compact = isCompact(context);
     final matched = widget.search.active
@@ -115,6 +120,7 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
                       cardTags: cardTags,
                       tagById: {for (final t in tags) t.id: t},
                       commentCounts: commentCounts,
+                      covers: covers,
                       showHeader: false,
                       fullWidth: true,
                     ),
@@ -131,6 +137,7 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
                     cardTags: cardTags,
                     tagById: {for (final t in tags) t.id: t},
                     commentCounts: commentCounts,
+                    covers: covers,
                   ),
                 ),
         ),
@@ -266,6 +273,7 @@ class _Column extends ConsumerWidget {
   final Map<String, List<String>> cardTags;
   final Map<String, TagRow> tagById;
   final Map<String, int> commentCounts;
+  final Map<String, AttachmentRow> covers;
 
   /// 手机上列名显示在顶部的标签条里，列自己就不用再画一遍标题。
   final bool showHeader;
@@ -279,6 +287,7 @@ class _Column extends ConsumerWidget {
     required this.cardTags,
     required this.tagById,
     required this.commentCounts,
+    required this.covers,
     this.showHeader = true,
     this.fullWidth = false,
   });
@@ -365,6 +374,7 @@ class _Column extends ConsumerWidget {
                         card: card,
                         otherTags: others,
                         commentCount: commentCounts[card.id] ?? 0,
+                        cover: covers[card.id],
                       );
                     },
                   ),
@@ -418,20 +428,27 @@ class _GroupedCardTile extends ConsumerWidget {
   final List<TagRow> otherTags;
   final int commentCount;
 
+  /// 封面图（第一张图片附件）。
+  final AttachmentRow? cover;
+
   const _GroupedCardTile({
     required this.boardId,
     required this.card,
     required this.otherTags,
     required this.commentCount,
+    required this.cover,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final k = theme.kanban;
+    // 分组视图里的卡片没有折叠状态，有图就显示。
+    final coverHash = cover?.thumbHash ?? cover?.hash;
 
     return Material(
-      color: k.cardSurface(card.color),
+      // 和画布上一样：完成的卡片一律淡红色，盖掉本来的颜色。
+      color: card.done ? k.doneSurface : k.cardSurface(card.color),
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         onTap: () => showCardDetail(context, boardId, card.id),
@@ -439,15 +456,36 @@ class _GroupedCardTile extends ConsumerWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: k.cardBorder),
+            border: Border.all(color: card.done ? k.doneBorder : k.cardBorder),
           ),
-          padding: const EdgeInsets.fromLTRB(11, 9, 7, 9),
-          child: Column(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              children: [
+                // 和画布上一样的完成色条——同一张卡片在两个视图里
+                // 必须长一个样。
+                if (card.done)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(width: 4, color: k.doneStripe),
+                  ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(card.done ? 13 : 11, 9, 7, 9),
+                  child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  DoneBox(
+                    done: card.done,
+                    onTap: () => ref
+                        .read(repositoryProvider)
+                        .toggleCardDone(boardId, card.id, !card.done),
+                  ),
+                  const SizedBox(width: 7),
                   Expanded(
                     child: Text(
                       card.title.isEmpty ? '未命名' : card.title,
@@ -485,6 +523,17 @@ class _GroupedCardTile extends ConsumerWidget {
                   ),
                 ],
               ),
+              if (coverHash != null) ...[
+                const SizedBox(height: 7),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: AttachmentImage(
+                    hash: coverHash,
+                    fit: BoxFit.fitWidth,
+                    placeholderHeight: 84,
+                  ),
+                ),
+              ],
               if (card.body.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Padding(
@@ -557,6 +606,10 @@ class _GroupedCardTile extends ConsumerWidget {
                 ),
               ],
             ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

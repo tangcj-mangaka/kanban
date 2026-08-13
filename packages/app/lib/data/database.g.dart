@@ -1844,6 +1844,19 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     ),
     defaultValue: const Constant(true),
   );
+  static const VerificationMeta _doneMeta = const VerificationMeta('done');
+  @override
+  late final GeneratedColumn<bool> done = GeneratedColumn<bool>(
+    'done',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("done" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _archivedMeta = const VerificationMeta(
     'archived',
   );
@@ -1910,6 +1923,7 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     width,
     z,
     collapsed,
+    done,
     archived,
     createdAt,
     updatedAt,
@@ -1977,6 +1991,12 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
       context.handle(
         _collapsedMeta,
         collapsed.isAcceptableOrUnknown(data['collapsed']!, _collapsedMeta),
+      );
+    }
+    if (data.containsKey('done')) {
+      context.handle(
+        _doneMeta,
+        done.isAcceptableOrUnknown(data['done']!, _doneMeta),
       );
     }
     if (data.containsKey('archived')) {
@@ -2052,6 +2072,10 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}collapsed'],
       )!,
+      done: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}done'],
+      )!,
       archived: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}archived'],
@@ -2101,6 +2125,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
   /// 画布上是否折叠。折叠态只显示标题和正文前两行。
   final bool collapsed;
 
+  /// 是否已完成（打勾）。完成的卡片变淡红色，但**不移动、不归档**。
+  final bool done;
+
   /// 是否已收进干草仓库。归档的卡片从画布和分组视图里彻底消失。
   final bool archived;
   final int createdAt;
@@ -2117,6 +2144,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     required this.width,
     required this.z,
     required this.collapsed,
+    required this.done,
     required this.archived,
     required this.createdAt,
     required this.updatedAt,
@@ -2137,6 +2165,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     map['width'] = Variable<double>(width);
     map['z'] = Variable<double>(z);
     map['collapsed'] = Variable<bool>(collapsed);
+    map['done'] = Variable<bool>(done);
     map['archived'] = Variable<bool>(archived);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
@@ -2158,6 +2187,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       width: Value(width),
       z: Value(z),
       collapsed: Value(collapsed),
+      done: Value(done),
       archived: Value(archived),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -2181,6 +2211,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       width: serializer.fromJson<double>(json['width']),
       z: serializer.fromJson<double>(json['z']),
       collapsed: serializer.fromJson<bool>(json['collapsed']),
+      done: serializer.fromJson<bool>(json['done']),
       archived: serializer.fromJson<bool>(json['archived']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
@@ -2201,6 +2232,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       'width': serializer.toJson<double>(width),
       'z': serializer.toJson<double>(z),
       'collapsed': serializer.toJson<bool>(collapsed),
+      'done': serializer.toJson<bool>(done),
       'archived': serializer.toJson<bool>(archived),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
@@ -2219,6 +2251,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     double? width,
     double? z,
     bool? collapsed,
+    bool? done,
     bool? archived,
     int? createdAt,
     int? updatedAt,
@@ -2234,6 +2267,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     width: width ?? this.width,
     z: z ?? this.z,
     collapsed: collapsed ?? this.collapsed,
+    done: done ?? this.done,
     archived: archived ?? this.archived,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -2251,6 +2285,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       width: data.width.present ? data.width.value : this.width,
       z: data.z.present ? data.z.value : this.z,
       collapsed: data.collapsed.present ? data.collapsed.value : this.collapsed,
+      done: data.done.present ? data.done.value : this.done,
       archived: data.archived.present ? data.archived.value : this.archived,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
@@ -2271,6 +2306,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           ..write('width: $width, ')
           ..write('z: $z, ')
           ..write('collapsed: $collapsed, ')
+          ..write('done: $done, ')
           ..write('archived: $archived, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -2291,6 +2327,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     width,
     z,
     collapsed,
+    done,
     archived,
     createdAt,
     updatedAt,
@@ -2310,6 +2347,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           other.width == this.width &&
           other.z == this.z &&
           other.collapsed == this.collapsed &&
+          other.done == this.done &&
           other.archived == this.archived &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -2327,6 +2365,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
   final Value<double> width;
   final Value<double> z;
   final Value<bool> collapsed;
+  final Value<bool> done;
   final Value<bool> archived;
   final Value<int> createdAt;
   final Value<int> updatedAt;
@@ -2343,6 +2382,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.width = const Value.absent(),
     this.z = const Value.absent(),
     this.collapsed = const Value.absent(),
+    this.done = const Value.absent(),
     this.archived = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2360,6 +2400,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.width = const Value.absent(),
     this.z = const Value.absent(),
     this.collapsed = const Value.absent(),
+    this.done = const Value.absent(),
     this.archived = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2378,6 +2419,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Expression<double>? width,
     Expression<double>? z,
     Expression<bool>? collapsed,
+    Expression<bool>? done,
     Expression<bool>? archived,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
@@ -2395,6 +2437,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       if (width != null) 'width': width,
       if (z != null) 'z': z,
       if (collapsed != null) 'collapsed': collapsed,
+      if (done != null) 'done': done,
       if (archived != null) 'archived': archived,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -2414,6 +2457,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Value<double>? width,
     Value<double>? z,
     Value<bool>? collapsed,
+    Value<bool>? done,
     Value<bool>? archived,
     Value<int>? createdAt,
     Value<int>? updatedAt,
@@ -2431,6 +2475,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       width: width ?? this.width,
       z: z ?? this.z,
       collapsed: collapsed ?? this.collapsed,
+      done: done ?? this.done,
       archived: archived ?? this.archived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -2472,6 +2517,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     if (collapsed.present) {
       map['collapsed'] = Variable<bool>(collapsed.value);
     }
+    if (done.present) {
+      map['done'] = Variable<bool>(done.value);
+    }
     if (archived.present) {
       map['archived'] = Variable<bool>(archived.value);
     }
@@ -2503,6 +2551,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
           ..write('width: $width, ')
           ..write('z: $z, ')
           ..write('collapsed: $collapsed, ')
+          ..write('done: $done, ')
           ..write('archived: $archived, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -5226,6 +5275,7 @@ typedef $$CardsTableCreateCompanionBuilder =
       Value<double> width,
       Value<double> z,
       Value<bool> collapsed,
+      Value<bool> done,
       Value<bool> archived,
       Value<int> createdAt,
       Value<int> updatedAt,
@@ -5244,6 +5294,7 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<double> width,
       Value<double> z,
       Value<bool> collapsed,
+      Value<bool> done,
       Value<bool> archived,
       Value<int> createdAt,
       Value<int> updatedAt,
@@ -5306,6 +5357,11 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<bool> get collapsed => $composableBuilder(
     column: $table.collapsed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get done => $composableBuilder(
+    column: $table.done,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5389,6 +5445,11 @@ class $$CardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get done => $composableBuilder(
+    column: $table.done,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get archived => $composableBuilder(
     column: $table.archived,
     builder: (column) => ColumnOrderings(column),
@@ -5449,6 +5510,9 @@ class $$CardsTableAnnotationComposer
   GeneratedColumn<bool> get collapsed =>
       $composableBuilder(column: $table.collapsed, builder: (column) => column);
 
+  GeneratedColumn<bool> get done =>
+      $composableBuilder(column: $table.done, builder: (column) => column);
+
   GeneratedColumn<bool> get archived =>
       $composableBuilder(column: $table.archived, builder: (column) => column);
 
@@ -5500,6 +5564,7 @@ class $$CardsTableTableManager
                 Value<double> width = const Value.absent(),
                 Value<double> z = const Value.absent(),
                 Value<bool> collapsed = const Value.absent(),
+                Value<bool> done = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
@@ -5516,6 +5581,7 @@ class $$CardsTableTableManager
                 width: width,
                 z: z,
                 collapsed: collapsed,
+                done: done,
                 archived: archived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -5534,6 +5600,7 @@ class $$CardsTableTableManager
                 Value<double> width = const Value.absent(),
                 Value<double> z = const Value.absent(),
                 Value<bool> collapsed = const Value.absent(),
+                Value<bool> done = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
@@ -5550,6 +5617,7 @@ class $$CardsTableTableManager
                 width: width,
                 z: z,
                 collapsed: collapsed,
+                done: done,
                 archived: archived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,

@@ -383,4 +383,101 @@ void main() {
       expect(c.deleted, isFalse);
     });
   });
+  group('未知字段（版本不一致）', () {
+    test('收到不认识的字段不会抛异常，也不会挡住后面的 op', () async {
+      // 这是旧版设备收到新版设备产生的 op 时的情形。以前这里会抛
+      // ArgumentError，导致 lastSeq 推不动、服务器重发、再抛——同步永久卡死。
+      final unknown = Op(
+        seq: 10,
+        opId: 'u1',
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: '这个版本还不认识的字段',
+        value: true,
+        deviceId: 'other',
+        wallTs: 1,
+      );
+
+      await expectLater(db.applyOp(unknown), completion(isTrue));
+
+      // 后续正常 op 照常生效。
+      await db.applyOp(
+        Op(
+          seq: 11,
+          opId: 'u2',
+          boardId: 'b1',
+          entity: Entity.card,
+          entityId: 'c1',
+          field: CardF.title,
+          value: '照常写进去',
+          deviceId: 'other',
+          wallTs: 2,
+        ),
+      );
+      final row = await (db.select(db.cards)..where((c) => c.id.equals('c1')))
+          .getSingle();
+      expect(row.title, '照常写进去');
+    });
+
+    test('未知字段仍然记进 op 日志', () async {
+      // 记着才能在升级、加上这一列之后重放补回来。
+      await db.applyOp(
+        Op(
+          seq: 10,
+          opId: 'u1',
+          boardId: 'b1',
+          entity: Entity.card,
+          entityId: 'c1',
+          field: '未来的字段',
+          value: 1,
+          deviceId: 'other',
+          wallTs: 1,
+        ),
+      );
+      final logged = await (db.select(db.ops)
+            ..where((o) => o.field.equals('未来的字段')))
+          .get();
+      expect(logged, hasLength(1));
+
+      // 而且**不能**给它写 fieldSeqs：留着空位，等这台设备升级、加上
+      // 这一列之后，迁移里的重放才能把它补进物化表。写了的话重放会
+      // 认为「已经处理过」而跳过。
+      final seqs = await (db.select(db.fieldSeqs)
+            ..where((f) => f.field.equals('未来的字段')))
+          .get();
+      expect(seqs, isEmpty);
+    });
+
+    test('本机产生未知字段仍然报错', () async {
+      // 远端来的未知字段是版本不一致，本机自己写错字段名是 bug，
+      // 不该被同一套宽容规则盖住。
+      await expectLater(
+        db.emit(
+          boardId: 'b1',
+          entity: Entity.card,
+          entityId: 'c1',
+          field: '拼错的字段名',
+          value: 1,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('重复的未知字段 op 不会被当成新的', () async {
+      Op op(String id) => Op(
+        seq: 10,
+        opId: id,
+        boardId: 'b1',
+        entity: Entity.card,
+        entityId: 'c1',
+        field: '未来的字段',
+        value: 1,
+        deviceId: 'other',
+        wallTs: 1,
+      );
+      expect(await db.applyOp(op('same')), isTrue);
+      expect(await db.applyOp(op('same')), isFalse, reason: '同一个 opId 只算一次');
+    });
+  });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../data/database.dart';
+import '../attachment_image.dart';
+import '../done_box.dart';
 import '../theme/app_theme.dart';
 
 /// 画布上的一张卡片。
@@ -33,6 +35,12 @@ class CanvasCard extends StatelessWidget {
   final VoidCallback onEditTitleDone;
   final ValueChanged<String> onMenuAction;
 
+  /// 点左边那个勾。
+  final VoidCallback onToggleDone;
+
+  /// 封面图（第一张图片附件）。没有图就是 null。
+  final AttachmentRow? cover;
+
   const CanvasCard({
     super.key,
     required this.card,
@@ -46,12 +54,20 @@ class CanvasCard extends StatelessWidget {
     required this.onToggleCollapse,
     required this.onEditTitleDone,
     required this.onMenuAction,
+    required this.onToggleDone,
+    required this.cover,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final k = theme.kanban;
+
+    // 折叠时收起封面图。折叠态的意思就是「只看个标题」，
+    // 留着一张大图就没有折叠可言了。
+    final coverHash = card.collapsed
+        ? null
+        : (cover?.thumbHash ?? cover?.hash);
 
     return AnimatedScale(
       scale: dragging ? 1.02 : 1,
@@ -61,9 +77,10 @@ class CanvasCard extends StatelessWidget {
         duration: const Duration(milliseconds: 120),
         width: card.width,
         decoration: BoxDecoration(
-          color: k.cardSurface(card.color),
+          // 完成的卡片一律淡红色，盖掉它本来的颜色。
+          color: card.done ? k.doneSurface : k.cardSurface(card.color),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: k.cardBorder),
+          border: Border.all(color: card.done ? k.doneBorder : k.cardBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(
@@ -74,8 +91,20 @@ class CanvasCard extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-        child: Column(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: Stack(
+            children: [
+              if (card.done)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(width: 4, color: k.doneStripe),
+                ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(card.done ? 14 : 12, 10, 8, 10),
+                child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -97,9 +126,26 @@ class CanvasCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (coverHash != null) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: AttachmentImage(
+                  hash: coverHash,
+                  // 按原比例铺满卡片宽度，高度由图自己定——用户要的是
+                  // 「先看看效果」，不裁切才看得出原图什么样。
+                  fit: BoxFit.fitWidth,
+                  placeholderHeight: 96,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             _footer(theme, k),
           ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -133,6 +179,8 @@ class CanvasCard extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        DoneBox(done: card.done, onTap: onToggleDone),
+        const SizedBox(width: 7),
         Expanded(
           child: Text(
             card.title.isEmpty ? '未命名' : card.title,

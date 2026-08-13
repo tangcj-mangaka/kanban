@@ -500,6 +500,13 @@ class Repository {
   ///
   /// 关系 ID 由两端拼出，是确定性的：两台设备各自打同一个标签产生的是
   /// 同一条记录的两个 op，天然幂等，不会变成两条重复关系。
+  /// 打勾／取消打勾。
+  ///
+  /// `touch: false`——打勾不算「内容改动」，不该让卡片在「最近修改」里
+  /// 往上跳。和挪位置、折叠是一类操作。
+  Future<void> toggleCardDone(String boardId, String cardId, bool done) =>
+      setCardField(boardId, cardId, CardF.done, done, touch: false);
+
   Future<void> setCardTag(
     String boardId,
     String cardId,
@@ -560,6 +567,36 @@ class Repository {
               ),
           ],
         );
+  }
+
+
+  /// 每张卡片的封面图：它的**第一张**图片附件。
+  ///
+  /// 「第一张」按添加时间算，和详情里附件的排列顺序一致——用户在详情里
+  /// 看到排在最前的那张，就是画布上显示的那张，不会对不上。
+  ///
+  /// 只挑图片：文档类附件没有可看的缩略图，拿文件名当封面没有意义。
+  Stream<Map<String, AttachmentRow>> watchCardCovers(String boardId) {
+    final q = db.select(db.attachments).join([
+      innerJoin(db.cards, db.cards.id.equalsExp(db.attachments.cardId)),
+    ])
+      ..where(
+        db.cards.boardId.equals(boardId) &
+            db.attachments.deleted.equals(false) &
+            db.cards.deleted.equals(false) &
+            db.attachments.mime.like('image/%'),
+      )
+      ..orderBy([OrderingTerm.asc(db.attachments.createdAt)]);
+
+    return q.watch().map((rows) {
+      final covers = <String, AttachmentRow>{};
+      for (final r in rows) {
+        final a = r.readTable(db.attachments);
+        // 已经有了就不覆盖——排序是升序，先遇到的就是最早那张。
+        covers.putIfAbsent(a.cardId, () => a);
+      }
+      return covers;
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -42,6 +42,10 @@ abstract final class CardF {
   static const width = 'width';
   static const z = 'z';
   static const collapsed = 'collapsed';
+
+  /// 打勾表示做完了。**和归档无关**——完成的卡片留在原位，
+  /// 什么时候收进干草仓库由用户自己决定。
+  static const done = 'done';
   static const archived = 'archived';
   static const createdAt = 'created_at';
   static const updatedAt = 'updated_at';

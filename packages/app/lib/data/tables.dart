@@ -118,6 +118,9 @@ class Cards extends Table {
   /// 画布上是否折叠。折叠态只显示标题和正文前两行。
   BoolColumn get collapsed => boolean().withDefault(const Constant(true))();
 
+  /// 是否已完成（打勾）。完成的卡片变淡红色，但**不移动、不归档**。
+  BoolColumn get done => boolean().withDefault(const Constant(false))();
+
   /// 是否已收进干草仓库。归档的卡片从画布和分组视图里彻底消失。
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 

@@ -122,6 +122,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
     final attachmentCounts =
         ref.watch(attachmentCountsProvider(widget.boardId)).value ?? const {};
+    final covers = ref.watch(cardCoversProvider(widget.boardId)).value ?? const {};
     final tagById = {for (final t in tags) t.id: t};
 
     return Column(
@@ -173,6 +174,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                         ],
                         commentCounts[card.id] ?? 0,
                         attachmentCounts[card.id] ?? 0,
+                        covers[card.id],
                       ),
                     if (cards.isEmpty) const _CanvasHint(),
                   ],
@@ -331,6 +333,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     List<TagRow> tags,
     int commentCount,
     int attachmentCount,
+    AttachmentRow? cover,
   ) {
     final world = card.id == _draggingId ? _dragWorld : Offset(card.x, card.y);
     final width = card.id == _resizingId ? _resizeWidth : card.width;
@@ -382,6 +385,10 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                       touch: false,
                     ),
                 onEditTitleDone: _commitTitle,
+                onToggleDone: () => ref
+                    .read(repositoryProvider)
+                    .toggleCardDone(widget.boardId, card.id, !card.done),
+                cover: cover,
                 onMenuAction: (action) => _onCardMenu(card, action),
               ),
             ),

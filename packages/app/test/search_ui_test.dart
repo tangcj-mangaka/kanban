@@ -14,6 +14,7 @@ CardRow _card({String title = '', String body = ''}) => CardRow(
   width: 240,
   z: 0,
   collapsed: false,
+  done: false,
   archived: false,
   deleted: false,
   createdAt: 0,

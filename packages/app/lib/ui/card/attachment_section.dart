@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../format.dart';
+import '../attachment_image.dart';
 import '../theme/app_theme.dart';
 
 /// 卡片详情里的附件区。
@@ -149,7 +149,7 @@ class _AttachmentTile extends ConsumerWidget {
                   child: SizedBox(
                     height: 84,
                     child: isImage
-                        ? _AttachmentImage(
+                        ? AttachmentImage(
                             hash: attachment.thumbHash ?? attachment.hash,
                             fit: BoxFit.cover,
                           )
@@ -287,61 +287,6 @@ class _PendingBadge extends ConsumerWidget {
 
 /// 按哈希取图并显示。
 ///
-/// 本地没有就去服务端下。服务端也不在的话显示占位符——**不报错、不卡住**。
-/// 看不到一张图不该让整个界面出问题。
-class _AttachmentImage extends ConsumerWidget {
-  final String hash;
-  final BoxFit fit;
-
-  const _AttachmentImage({required this.hash, this.fit = BoxFit.contain});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final k = Theme.of(context).kanban;
-
-    return FutureBuilder<Uint8List?>(
-      future: ref.read(attachmentSyncerProvider).fetch(hash),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.8,
-                color: k.cardBody.withValues(alpha: 0.5),
-              ),
-            ),
-          );
-        }
-        final bytes = snapshot.data;
-        if (bytes == null) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.cloud_off_outlined,
-                  size: 20,
-                  color: k.cardBody.withValues(alpha: 0.6),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '服务端离线',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: k.cardBody.withValues(alpha: 0.6),
-                    fontSize: 9.5,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        return Image.memory(bytes, fit: fit, gaplessPlayback: true);
-      },
-    );
-  }
-}
 
 class _ImagePreview extends StatelessWidget {
   final AttachmentRow attachment;
@@ -363,7 +308,7 @@ class _ImagePreview extends StatelessWidget {
               maxHeight: screen.height * 0.8,
             ),
             // 预览用原图，不用缩略图。
-            child: _AttachmentImage(hash: attachment.hash),
+            child: AttachmentImage(hash: attachment.hash),
           ),
           const SizedBox(height: 12),
           Container(

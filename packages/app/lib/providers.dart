@@ -161,6 +161,12 @@ final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(
   (ref, boardId) => ref.watch(repositoryProvider).watchCommentCounts(boardId),
 );
 
+/// 每张卡片的封面图（第一张图片附件），供画布和分组视图用。
+final cardCoversProvider =
+    StreamProvider.family<Map<String, AttachmentRow>, String>(
+      (ref, boardId) => ref.watch(repositoryProvider).watchCardCovers(boardId),
+    );
+
 /// 全局搜索结果，key 是搜索词。
 ///
 /// **必须 autoDispose**：用户每敲一个字就是一个新的 family key，不自动回收
