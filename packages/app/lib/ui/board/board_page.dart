@@ -10,6 +10,7 @@ import '../haystack/haystack_view.dart';
 import '../tags/tag_manager_panel.dart';
 import '../responsive.dart';
 import '../theme/app_theme.dart';
+import '../theme/haystack_icon.dart';
 import 'board_search.dart';
 
 enum BoardView {
@@ -269,17 +270,36 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                 onClose: _closeSearch,
               ),
             Expanded(
-              child: switch (view) {
-                BoardView.canvas => CanvasView(
-                  boardId: widget.boardId,
-                  search: _search,
+              // 三个视图看的是同一批卡片，切换时交叉淡入比硬切更贴合
+              // 「换个角度看同一堆东西」这个意思。
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                // 新旧两个视图都要 Positioned.fill。默认的 layoutBuilder 让
+                // 当前视图以松约束自己定尺寸，结果画布和工具条会缩成内容
+                // 宽度、缩在中间——视图必须占满整个区域。
+                layoutBuilder: (current, previous) => Stack(
+                  children: [
+                    for (final w in previous) Positioned.fill(child: w),
+                    if (current != null) Positioned.fill(child: current),
+                  ],
                 ),
-                BoardView.grouped => GroupedView(
-                  boardId: widget.boardId,
-                  search: _search,
+                child: KeyedSubtree(
+                  key: ValueKey(view),
+                  child: switch (view) {
+                    BoardView.canvas => CanvasView(
+                      boardId: widget.boardId,
+                      search: _search,
+                    ),
+                    BoardView.grouped => GroupedView(
+                      boardId: widget.boardId,
+                      search: _search,
+                    ),
+                    BoardView.haystack => HaystackView(boardId: widget.boardId),
+                  },
                 ),
-                BoardView.haystack => HaystackView(boardId: widget.boardId),
-              },
+              ),
             ),
           ],
         ),
@@ -482,11 +502,19 @@ class _SwitcherTab extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                view.icon,
-                size: 15,
-                color: selected ? theme.colorScheme.primary : k.cardBody,
-              ),
+              // 干草仓库用它自己的草垛脸，不用通用的方盒子图标——
+              // 它是这个应用里唯一有名字、有性格的地方。
+              if (view == BoardView.haystack)
+                Opacity(
+                  opacity: selected ? 1 : 0.72,
+                  child: const HaystackIcon(size: 17),
+                )
+              else
+                Icon(
+                  view.icon,
+                  size: 15,
+                  color: selected ? theme.colorScheme.primary : k.cardBody,
+                ),
               if (!compact) ...[
                 const SizedBox(width: 5),
                 Text(

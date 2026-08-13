@@ -140,7 +140,9 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
 
   Widget _toolbar(ThemeData theme, KanbanColors k, {required int hiddenCount}) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      // 三个视图的工具条内边距要一致（16/8）——切换视图时高度一变，
+      // 下面整块内容会跟着跳一下。
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: k.hairline)),
       ),

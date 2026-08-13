@@ -171,15 +171,15 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
           ],
         ),
         const SizedBox(height: 8),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: k.hairline),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: _preview ? _buildPreview(theme, k) : _buildEditor(theme, k),
+        // 不再 Expanded：编辑框改成跟着内容长高，短正文就占几行，
+        // 把下面的附件和评论让出来。
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: k.hairline),
+            borderRadius: BorderRadius.circular(8),
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: _preview ? _buildPreview(theme, k) : _buildEditor(theme, k),
         ),
       ],
     );
@@ -189,9 +189,10 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     return TextField(
       controller: _controller,
       focusNode: _focus,
+      // minLines 给个底：空正文时也要有一块像样的可点区域，
+      // 不然光标挤在一条缝里。maxLines 不限，写多长长多高。
+      minLines: 5,
       maxLines: null,
-      expands: true,
-      textAlignVertical: TextAlignVertical.top,
       onChanged: _onTextChanged,
       style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
       decoration: InputDecoration(

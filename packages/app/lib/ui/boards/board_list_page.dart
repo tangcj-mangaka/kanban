@@ -5,9 +5,12 @@ import 'package:shared/shared.dart';
 import '../../data/database.dart';
 import '../../data/repository.dart';
 import '../../providers.dart';
+import '../empty_state.dart';
 import '../format.dart';
 import '../responsive.dart';
 import '../theme/app_theme.dart';
+import '../transitions.dart';
+import '../theme/donkey_icon.dart';
 import '../board/board_page.dart';
 import '../sync/sync_status_chip.dart';
 import 'board_dialogs.dart';
@@ -409,7 +412,7 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
 
   void _openBoard(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      BoardRoute<void>(
         builder: (_) => BoardPage(boardId: widget.summary.board.id),
       ),
     );
@@ -541,27 +544,14 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '还没有看板',
-            style: theme.textTheme.titleMedium?.copyWith(color: theme.kanban.cardTitle),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '每个看板是一块自由画布，卡片随便摆',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.kanban.cardBody),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('建第一个看板'),
-          ),
-        ],
+    return EmptyState(
+      art: const GentleBob(child: DonkeyIcon(size: 96)),
+      title: '还没有看板',
+      body: '每个看板是一块自由画布，卡片随便摆。\n分类只用标签，不用先想好几列。',
+      action: FilledButton.icon(
+        onPressed: onCreate,
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('建第一个看板'),
       ),
     );
   }
@@ -682,7 +672,7 @@ class _CardHitTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
+          BoardRoute<void>(
             builder: (_) =>
                 BoardPage(boardId: card.boardId, openCardId: card.id),
           ),
@@ -800,12 +790,9 @@ class _NoMatchState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Text(
-        '没有名字含「$query」的看板',
-        style: theme.textTheme.bodyMedium?.copyWith(color: theme.kanban.cardBody),
-      ),
+    return EmptyState(
+      title: '没有含「$query」的看板或卡片',
+      body: '搜的是看板名字、卡片标题和正文。\n归档在干草仓库里的卡片也在搜索范围内。',
     );
   }
 }

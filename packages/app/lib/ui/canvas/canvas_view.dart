@@ -8,6 +8,7 @@ import '../../data/database.dart';
 import '../../providers.dart';
 import '../board/board_search.dart';
 import '../boards/board_dialogs.dart';
+import '../empty_state.dart';
 import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
@@ -192,7 +193,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final k = Theme.of(context).kanban;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      // 三个视图的工具条内边距要一致（16/8）——切换视图时高度一变，
+      // 下面整块内容会跟着跳一下。
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: k.hairline)),
       ),
@@ -338,9 +341,13 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final focused = search.active && card.id == search.focusCardId;
 
     return Positioned(
+      // 带上 key，Stack 里的元素才会跟着卡片走而不是跟着位置走——
+      // 否则删掉一张卡，后面那张会「继承」它的出现动画。
+      key: ValueKey(card.id),
       left: screen.dx,
       top: screen.dy,
-      child: Transform.scale(
+      child: _AppearOnce(
+        child: Transform.scale(
         scale: _t.scale,
         alignment: Alignment.topLeft,
         child: AnimatedOpacity(
@@ -432,6 +439,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
             ),
           ],
           ),
+        ),
         ),
       ),
     );
@@ -657,33 +665,45 @@ class _ZoomIndicator extends StatelessWidget {
 }
 
 /// 空画布上的引导。
+/// 挂上来的时候淡入并轻微放大一下，之后就不再动。
+///
+/// 新建的卡片「啪」地出现在画布上会让人一愣——尤其是同步过来的卡片，
+/// 它不是你自己点出来的。加一下过渡，眼睛就跟得上了。
+class _AppearOnce extends StatelessWidget {
+  final Widget child;
+
+  const _AppearOnce({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.scale(
+          scale: 0.94 + 0.06 * t,
+          alignment: Alignment.topLeft,
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _CanvasHint extends StatelessWidget {
   const _CanvasHint();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return IgnorePointer(
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '双击空白处新建卡片',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.kanban.cardBody,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '滚轮平移 · ⌘ + 滚轮缩放 · 空格拖拽也能平移',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.kanban.cardBody.withValues(alpha: 0.7),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const EmptyState(
+      ignorePointer: true,
+      title: '双击空白处新建卡片',
+      body: '滚轮平移 · ⌘ + 滚轮缩放 · 空格拖拽也能平移',
     );
   }
 }

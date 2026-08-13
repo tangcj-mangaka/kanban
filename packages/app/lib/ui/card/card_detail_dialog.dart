@@ -92,14 +92,13 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               const SizedBox(height: 14),
               _tagRow(theme, k, card),
               const SizedBox(height: 16),
-              // 正文给一个固定的够用高度，整体可滚动。
+              // 正文跟着内容长高，整体可滚动。
               //
-              // 早先让正文 Expanded 吃掉剩余空间，加进附件区之后它被挤成
-              // 一条，字都显示不全——弹窗里几块内容抢同一份高度，谁都不
-              // 该无限伸缩。
-              SizedBox(
-                height: 240,
-                child: Padding(
+              // 这里前后错过两次：一开始让正文 Expanded 吃掉剩余空间，加进
+              // 附件区之后它被挤成一条；改成固定 240 又走到另一个极端——
+              // 一行字的卡片也顶着一个空箱子，把评论输入框挤出了窗口。
+              // 现在编辑器自己按内容定高（最少 5 行），谁也不抢谁的。
+              Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: MarkdownEditor(
                     // key 绑到卡片上：换卡片时重建编辑器，不会串内容。
@@ -116,7 +115,6 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
                     },
                   ),
                 ),
-              ),
               const SizedBox(height: 14),
               AttachmentSection(boardId: widget.boardId, cardId: card.id),
               const SizedBox(height: 14),

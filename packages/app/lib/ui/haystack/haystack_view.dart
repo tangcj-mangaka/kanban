@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
+import '../empty_state.dart';
 import '../format.dart';
 import '../responsive.dart';
 import '../theme/app_theme.dart';
+import '../theme/haystack_icon.dart';
 
 /// 干草仓库 —— 每块看板自己的归档区。
 ///
@@ -47,19 +49,19 @@ class _HaystackViewState extends ConsumerState<HaystackView> {
     }).toList();
 
     return Column(
+      // 不 stretch 的话，Column 默认按 center 对齐，而这里的工具条是 Wrap
+      // （贴合内容宽度），结果整条工具条会浮在窗口正中间——画布和分组
+      // 视图的工具条是带 Spacer 的 Row，会自己撑满，所以没露出这个问题。
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _toolbar(theme, k, tags, all.length),
         Expanded(
           child: all.isEmpty
               ? const _EmptyHaystack()
               : visible.isEmpty
-              ? Center(
-                  child: Text(
-                    '没有符合条件的卡片',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: k.cardBody,
-                    ),
-                  ),
+              ? const EmptyState(
+                  title: '没有符合条件的卡片',
+                  body: '换个词，或者把标签筛选清掉试试。',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
@@ -368,26 +370,10 @@ class _EmptyHaystack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '仓库是空的',
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.kanban.cardTitle,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '卡片做完了又不想删，就收进这里。位置和标签都会留着，随时捞回去。',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.kanban.cardBody,
-            ),
-          ),
-        ],
-      ),
+    return const EmptyState(
+      art: GentleBob(child: HaystackIcon(size: 92, sleeping: true)),
+      title: '仓库是空的',
+      body: '卡片做完了又不想删，就收进这里。\n位置和标签都会留着，随时捞回去。',
     );
   }
 }
