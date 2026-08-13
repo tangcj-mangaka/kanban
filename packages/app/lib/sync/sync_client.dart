@@ -154,6 +154,17 @@ class SyncClient {
   /// 分两次发是浪费。
   static const _flushDelay = Duration(milliseconds: 150);
 
+  /// 服务端连接信息，供附件的 HTTP 通道用。没配服务器或没配对时为 null。
+  ///
+  /// 附件走独立的 HTTP 通道（文件塞不进 WebSocket 的 JSON 消息），
+  /// 但用的是同一台服务器、同一个令牌。
+  ({String host, int port, String token})? get serverEndpoint {
+    final host = _host;
+    final token = _token;
+    if (host == null || token == null || token.isEmpty) return null;
+    return (host: host, port: _port, token: token);
+  }
+
   // -------------------------------------------------------------------------
   // 生命周期
   // -------------------------------------------------------------------------

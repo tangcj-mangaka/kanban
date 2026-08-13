@@ -201,3 +201,27 @@ class Settings extends Table {
   @override
   Set<Column> get primaryKey => {key};
 }
+
+/// 本机的附件缓存。
+///
+/// 记录哪些文件已经存在本地、有没有传上服务端、最近什么时候用过。
+///
+/// 这张表和 [Settings] 一样**不参与同步**：每台设备缓存了什么、传没传完，
+/// 都是自己的事。手机上没缓存某张图不代表它不存在，只代表还没下过来。
+@DataClassName('FileCacheRow')
+class FileCaches extends Table {
+  TextColumn get hash => text()();
+  IntColumn get size => integer()();
+
+  /// 已确认存在于服务端。
+  ///
+  /// false 表示还在待传队列里——离线时加的附件就停在这个状态，
+  /// 联网后自动补传。
+  BoolColumn get uploaded => boolean().withDefault(const Constant(false))();
+
+  /// 最近一次用到的时间，用于缓存淘汰。
+  IntColumn get lastUsed => integer()();
+
+  @override
+  Set<Column> get primaryKey => {hash};
+}

@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'bootstrap.dart';
 import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/board/board_page.dart';
@@ -21,9 +22,7 @@ import 'ui/card/card_detail_dialog.dart';
 import 'ui/sync/sync_settings_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
-void main() {
-  runApp(const ProviderScope(child: _PreviewApp()));
-}
+Future<void> main() => runKanbanApp(const _PreviewApp());
 
 class _PreviewApp extends ConsumerStatefulWidget {
   const _PreviewApp();

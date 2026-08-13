@@ -498,6 +498,83 @@ class Repository {
   );
 
   // -------------------------------------------------------------------------
+  // 附件
+  // -------------------------------------------------------------------------
+
+  /// 某张卡片的附件，按添加时间正序。
+  Stream<List<AttachmentRow>> watchAttachments(String cardId) =>
+      (db.select(db.attachments)
+            ..where((a) => a.cardId.equals(cardId) & a.deleted.equals(false))
+            ..orderBy([(a) => OrderingTerm.asc(a.createdAt)]))
+          .watch();
+
+  /// 把一个已经导入本地缓存的文件挂到卡片上。
+  ///
+  /// 只写 op，**不碰网络**——离线时加附件必须立刻可用，上传是后台的事。
+  Future<String> addAttachment({
+    required String boardId,
+    required String cardId,
+    required String hash,
+    required String filename,
+    required int size,
+    required String mime,
+    String? thumbHash,
+  }) async {
+    final id = _uuid.v4();
+    await db.transaction(() async {
+      for (final change in <(String, Object?)>[
+        (AttachmentF.cardId, cardId),
+        (AttachmentF.hash, hash),
+        (AttachmentF.thumbHash, thumbHash),
+        (AttachmentF.filename, filename),
+        (AttachmentF.size, size),
+        (AttachmentF.mime, mime),
+        (AttachmentF.createdAt, DateTime.now().millisecondsSinceEpoch),
+      ]) {
+        await db.emit(
+          boardId: boardId,
+          entity: Entity.attachment,
+          entityId: id,
+          field: change.$1,
+          value: change.$2,
+        );
+      }
+    });
+    return id;
+  }
+
+  /// 删除附件。走墓碑，**不删磁盘上的文件**——同一份内容可能还挂在别的
+  /// 卡片上，而且服务端的回收是延迟 30 天的，这期间还能后悔。
+  Future<void> deleteAttachment(String boardId, String attachmentId) => db.emit(
+    boardId: boardId,
+    entity: Entity.attachment,
+    entityId: attachmentId,
+    field: AttachmentF.deleted,
+    value: true,
+  );
+
+  /// 每张卡片的附件数，用于画布上的角标。
+  Stream<Map<String, int>> watchAttachmentCounts(String boardId) {
+    final count = db.attachments.id.count();
+    final query =
+        db.selectOnly(db.attachments).join([
+            innerJoin(db.cards, db.cards.id.equalsExp(db.attachments.cardId)),
+          ])
+          ..addColumns([db.attachments.cardId, count])
+          ..where(
+            db.cards.boardId.equals(boardId) &
+                db.attachments.deleted.equals(false),
+          )
+          ..groupBy([db.attachments.cardId]);
+
+    return query.watch().map(
+      (rows) => {
+        for (final r in rows) r.read(db.attachments.cardId)!: r.read(count) ?? 0,
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // 评论
   // -------------------------------------------------------------------------
 

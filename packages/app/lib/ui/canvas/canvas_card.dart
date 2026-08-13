@@ -17,6 +17,9 @@ class CanvasCard extends StatelessWidget {
   /// 评论条数，为 0 时不显示角标。
   final int commentCount;
 
+  /// 附件个数，为 0 时不显示角标。
+  final int attachmentCount;
+
   /// 正在被拖动——加重阴影并轻微放大，给一点"拿起来了"的手感。
   final bool dragging;
 
@@ -35,6 +38,7 @@ class CanvasCard extends StatelessWidget {
     required this.card,
     required this.tags,
     required this.commentCount,
+    required this.attachmentCount,
     required this.dragging,
     required this.editing,
     required this.titleController,
@@ -199,6 +203,22 @@ class CanvasCard extends StatelessWidget {
             ],
           ),
         ),
+        if (attachmentCount > 0) ...[
+          Icon(
+            Icons.attach_file,
+            size: 12,
+            color: k.cardBody.withValues(alpha: 0.75),
+          ),
+          const SizedBox(width: 2),
+          Text(
+            '$attachmentCount',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: k.cardBody.withValues(alpha: 0.75),
+              fontSize: 10.5,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
         if (commentCount > 0) ...[
           Icon(
             Icons.mode_comment_outlined,

@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'bootstrap.dart';
 import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/theme/app_theme.dart';
 
-void main() {
-  runApp(const ProviderScope(child: KanbanApp()));
-}
+Future<void> main() => runKanbanApp(const KanbanApp());
 
 class KanbanApp extends ConsumerWidget {
   const KanbanApp({super.key});

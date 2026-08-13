@@ -39,6 +39,7 @@ int compareOpOrder(int? aSeq, int aLocal, int? bSeq, int bLocal) {
     Attachments,
     Comments,
     Settings,
+    FileCaches,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -51,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -59,6 +60,8 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (m, from, to) async {
       // v2：加了本机设置表（服务器地址、令牌、同步进度）。
       if (from < 2) await m.createTable(settings);
+      // v3：加了附件的本机缓存表。
+      if (from < 3) await m.createTable(fileCaches);
     },
   );
 

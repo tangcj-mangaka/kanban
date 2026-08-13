@@ -8,6 +8,7 @@ import '../boards/board_dialogs.dart';
 import '../format.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
+import 'attachment_section.dart';
 import 'markdown_editor.dart';
 
 /// 打开卡片详情。
@@ -79,7 +80,8 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
         height: (screen.height * 0.86).clamp(420.0, 760.0),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 16, 14, 16),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _header(theme, k, card),
@@ -88,8 +90,13 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               const SizedBox(height: 14),
               _tagRow(theme, k, card),
               const SizedBox(height: 16),
-              // 正文吃掉所有剩余空间；评论区在下面按需占高。
-              Expanded(
+              // 正文给一个固定的够用高度，整体可滚动。
+              //
+              // 早先让正文 Expanded 吃掉剩余空间，加进附件区之后它被挤成
+              // 一条，字都显示不全——弹窗里几块内容抢同一份高度，谁都不
+              // 该无限伸缩。
+              SizedBox(
+                height: 240,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: MarkdownEditor(
@@ -109,8 +116,11 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
                 ),
               ),
               const SizedBox(height: 14),
+              AttachmentSection(boardId: widget.boardId, cardId: card.id),
+              const SizedBox(height: 14),
               _comments(theme, k),
             ],
+          ),
           ),
         ),
       ),
@@ -303,6 +313,7 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
             constraints: const BoxConstraints(maxHeight: 210),
             child: ListView.separated(
               shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
               padding: const EdgeInsets.only(right: 8),
               itemCount: comments.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),

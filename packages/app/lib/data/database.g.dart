@@ -3973,6 +3973,325 @@ class SettingsCompanion extends UpdateCompanion<SettingRow> {
   }
 }
 
+class $FileCachesTable extends FileCaches
+    with TableInfo<$FileCachesTable, FileCacheRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileCachesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _hashMeta = const VerificationMeta('hash');
+  @override
+  late final GeneratedColumn<String> hash = GeneratedColumn<String>(
+    'hash',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _uploadedMeta = const VerificationMeta(
+    'uploaded',
+  );
+  @override
+  late final GeneratedColumn<bool> uploaded = GeneratedColumn<bool>(
+    'uploaded',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("uploaded" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _lastUsedMeta = const VerificationMeta(
+    'lastUsed',
+  );
+  @override
+  late final GeneratedColumn<int> lastUsed = GeneratedColumn<int>(
+    'last_used',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [hash, size, uploaded, lastUsed];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_caches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileCacheRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('hash')) {
+      context.handle(
+        _hashMeta,
+        hash.isAcceptableOrUnknown(data['hash']!, _hashMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hashMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+        _sizeMeta,
+        size.isAcceptableOrUnknown(data['size']!, _sizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('uploaded')) {
+      context.handle(
+        _uploadedMeta,
+        uploaded.isAcceptableOrUnknown(data['uploaded']!, _uploadedMeta),
+      );
+    }
+    if (data.containsKey('last_used')) {
+      context.handle(
+        _lastUsedMeta,
+        lastUsed.isAcceptableOrUnknown(data['last_used']!, _lastUsedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastUsedMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {hash};
+  @override
+  FileCacheRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileCacheRow(
+      hash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hash'],
+      )!,
+      size: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size'],
+      )!,
+      uploaded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}uploaded'],
+      )!,
+      lastUsed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_used'],
+      )!,
+    );
+  }
+
+  @override
+  $FileCachesTable createAlias(String alias) {
+    return $FileCachesTable(attachedDatabase, alias);
+  }
+}
+
+class FileCacheRow extends DataClass implements Insertable<FileCacheRow> {
+  final String hash;
+  final int size;
+
+  /// 已确认存在于服务端。
+  ///
+  /// false 表示还在待传队列里——离线时加的附件就停在这个状态，
+  /// 联网后自动补传。
+  final bool uploaded;
+
+  /// 最近一次用到的时间，用于缓存淘汰。
+  final int lastUsed;
+  const FileCacheRow({
+    required this.hash,
+    required this.size,
+    required this.uploaded,
+    required this.lastUsed,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['hash'] = Variable<String>(hash);
+    map['size'] = Variable<int>(size);
+    map['uploaded'] = Variable<bool>(uploaded);
+    map['last_used'] = Variable<int>(lastUsed);
+    return map;
+  }
+
+  FileCachesCompanion toCompanion(bool nullToAbsent) {
+    return FileCachesCompanion(
+      hash: Value(hash),
+      size: Value(size),
+      uploaded: Value(uploaded),
+      lastUsed: Value(lastUsed),
+    );
+  }
+
+  factory FileCacheRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileCacheRow(
+      hash: serializer.fromJson<String>(json['hash']),
+      size: serializer.fromJson<int>(json['size']),
+      uploaded: serializer.fromJson<bool>(json['uploaded']),
+      lastUsed: serializer.fromJson<int>(json['lastUsed']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'hash': serializer.toJson<String>(hash),
+      'size': serializer.toJson<int>(size),
+      'uploaded': serializer.toJson<bool>(uploaded),
+      'lastUsed': serializer.toJson<int>(lastUsed),
+    };
+  }
+
+  FileCacheRow copyWith({
+    String? hash,
+    int? size,
+    bool? uploaded,
+    int? lastUsed,
+  }) => FileCacheRow(
+    hash: hash ?? this.hash,
+    size: size ?? this.size,
+    uploaded: uploaded ?? this.uploaded,
+    lastUsed: lastUsed ?? this.lastUsed,
+  );
+  FileCacheRow copyWithCompanion(FileCachesCompanion data) {
+    return FileCacheRow(
+      hash: data.hash.present ? data.hash.value : this.hash,
+      size: data.size.present ? data.size.value : this.size,
+      uploaded: data.uploaded.present ? data.uploaded.value : this.uploaded,
+      lastUsed: data.lastUsed.present ? data.lastUsed.value : this.lastUsed,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileCacheRow(')
+          ..write('hash: $hash, ')
+          ..write('size: $size, ')
+          ..write('uploaded: $uploaded, ')
+          ..write('lastUsed: $lastUsed')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(hash, size, uploaded, lastUsed);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileCacheRow &&
+          other.hash == this.hash &&
+          other.size == this.size &&
+          other.uploaded == this.uploaded &&
+          other.lastUsed == this.lastUsed);
+}
+
+class FileCachesCompanion extends UpdateCompanion<FileCacheRow> {
+  final Value<String> hash;
+  final Value<int> size;
+  final Value<bool> uploaded;
+  final Value<int> lastUsed;
+  final Value<int> rowid;
+  const FileCachesCompanion({
+    this.hash = const Value.absent(),
+    this.size = const Value.absent(),
+    this.uploaded = const Value.absent(),
+    this.lastUsed = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileCachesCompanion.insert({
+    required String hash,
+    required int size,
+    this.uploaded = const Value.absent(),
+    required int lastUsed,
+    this.rowid = const Value.absent(),
+  }) : hash = Value(hash),
+       size = Value(size),
+       lastUsed = Value(lastUsed);
+  static Insertable<FileCacheRow> custom({
+    Expression<String>? hash,
+    Expression<int>? size,
+    Expression<bool>? uploaded,
+    Expression<int>? lastUsed,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (hash != null) 'hash': hash,
+      if (size != null) 'size': size,
+      if (uploaded != null) 'uploaded': uploaded,
+      if (lastUsed != null) 'last_used': lastUsed,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileCachesCompanion copyWith({
+    Value<String>? hash,
+    Value<int>? size,
+    Value<bool>? uploaded,
+    Value<int>? lastUsed,
+    Value<int>? rowid,
+  }) {
+    return FileCachesCompanion(
+      hash: hash ?? this.hash,
+      size: size ?? this.size,
+      uploaded: uploaded ?? this.uploaded,
+      lastUsed: lastUsed ?? this.lastUsed,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (hash.present) {
+      map['hash'] = Variable<String>(hash.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (uploaded.present) {
+      map['uploaded'] = Variable<bool>(uploaded.value);
+    }
+    if (lastUsed.present) {
+      map['last_used'] = Variable<int>(lastUsed.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileCachesCompanion(')
+          ..write('hash: $hash, ')
+          ..write('size: $size, ')
+          ..write('uploaded: $uploaded, ')
+          ..write('lastUsed: $lastUsed, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3985,6 +4304,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AttachmentsTable attachments = $AttachmentsTable(this);
   late final $CommentsTable comments = $CommentsTable(this);
   late final $SettingsTable settings = $SettingsTable(this);
+  late final $FileCachesTable fileCaches = $FileCachesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3999,6 +4319,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     attachments,
     comments,
     settings,
+    fileCaches,
   ];
 }
 
@@ -6063,6 +6384,187 @@ typedef $$SettingsTableProcessedTableManager =
       SettingRow,
       PrefetchHooks Function()
     >;
+typedef $$FileCachesTableCreateCompanionBuilder =
+    FileCachesCompanion Function({
+      required String hash,
+      required int size,
+      Value<bool> uploaded,
+      required int lastUsed,
+      Value<int> rowid,
+    });
+typedef $$FileCachesTableUpdateCompanionBuilder =
+    FileCachesCompanion Function({
+      Value<String> hash,
+      Value<int> size,
+      Value<bool> uploaded,
+      Value<int> lastUsed,
+      Value<int> rowid,
+    });
+
+class $$FileCachesTableFilterComposer
+    extends Composer<_$AppDatabase, $FileCachesTable> {
+  $$FileCachesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get hash => $composableBuilder(
+    column: $table.hash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastUsed => $composableBuilder(
+    column: $table.lastUsed,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FileCachesTableOrderingComposer
+    extends Composer<_$AppDatabase, $FileCachesTable> {
+  $$FileCachesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get hash => $composableBuilder(
+    column: $table.hash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastUsed => $composableBuilder(
+    column: $table.lastUsed,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FileCachesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FileCachesTable> {
+  $$FileCachesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get hash =>
+      $composableBuilder(column: $table.hash, builder: (column) => column);
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<bool> get uploaded =>
+      $composableBuilder(column: $table.uploaded, builder: (column) => column);
+
+  GeneratedColumn<int> get lastUsed =>
+      $composableBuilder(column: $table.lastUsed, builder: (column) => column);
+}
+
+class $$FileCachesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FileCachesTable,
+          FileCacheRow,
+          $$FileCachesTableFilterComposer,
+          $$FileCachesTableOrderingComposer,
+          $$FileCachesTableAnnotationComposer,
+          $$FileCachesTableCreateCompanionBuilder,
+          $$FileCachesTableUpdateCompanionBuilder,
+          (
+            FileCacheRow,
+            BaseReferences<_$AppDatabase, $FileCachesTable, FileCacheRow>,
+          ),
+          FileCacheRow,
+          PrefetchHooks Function()
+        > {
+  $$FileCachesTableTableManager(_$AppDatabase db, $FileCachesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileCachesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileCachesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileCachesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> hash = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
+                Value<int> lastUsed = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileCachesCompanion(
+                hash: hash,
+                size: size,
+                uploaded: uploaded,
+                lastUsed: lastUsed,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String hash,
+                required int size,
+                Value<bool> uploaded = const Value.absent(),
+                required int lastUsed,
+                Value<int> rowid = const Value.absent(),
+              }) => FileCachesCompanion.insert(
+                hash: hash,
+                size: size,
+                uploaded: uploaded,
+                lastUsed: lastUsed,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FileCachesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FileCachesTable,
+      FileCacheRow,
+      $$FileCachesTableFilterComposer,
+      $$FileCachesTableOrderingComposer,
+      $$FileCachesTableAnnotationComposer,
+      $$FileCachesTableCreateCompanionBuilder,
+      $$FileCachesTableUpdateCompanionBuilder,
+      (
+        FileCacheRow,
+        BaseReferences<_$AppDatabase, $FileCachesTable, FileCacheRow>,
+      ),
+      FileCacheRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6083,4 +6585,6 @@ class $AppDatabaseManager {
       $$CommentsTableTableManager(_db, _db.comments);
   $$SettingsTableTableManager get settings =>
       $$SettingsTableTableManager(_db, _db.settings);
+  $$FileCachesTableTableManager get fileCaches =>
+      $$FileCachesTableTableManager(_db, _db.fileCaches);
 }

@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/database.dart';
 import 'data/repository.dart';
+import 'dart:io';
+
+import 'sync/attachment_store.dart';
+import 'sync/attachment_syncer.dart';
 import 'sync/discovery_listener.dart';
 import 'sync/sync_client.dart';
 
@@ -49,6 +53,46 @@ final discoveredServersProvider =
       unawaited(listener.start());
       return listener.stream;
     });
+
+/// 附件缓存目录。在 main() 里解析好后覆盖进来——路径要异步取，
+/// 而 provider 得同步给出结果。
+final attachmentCacheDirProvider = Provider<Directory>(
+  (_) => throw UnimplementedError('要在 ProviderScope 里覆盖'),
+);
+
+final attachmentStoreProvider = Provider<AttachmentStore>(
+  (ref) => AttachmentStore(
+    ref.watch(databaseProvider),
+    ref.watch(attachmentCacheDirProvider),
+  ),
+);
+
+/// 附件的上传下载。
+///
+/// 走独立的 HTTP 通道，但用同一台服务器、同一个令牌。
+final attachmentSyncerProvider = Provider<AttachmentSyncer>((ref) {
+  final client = ref.watch(syncClientProvider);
+  final syncer = AttachmentSyncer(
+    store: ref.watch(attachmentStoreProvider),
+    endpoint: () {
+      final e = client.serverEndpoint;
+      if (e == null) return null;
+      return ServerEndpoint(host: e.host, port: e.port, token: e.token);
+    },
+    onLog: kDebugMode ? (m) => debugPrint('[附件] $m') : null,
+  );
+  ref.onDispose(syncer.dispose);
+
+  // 一连上就把离线期间攒的附件补传出去。
+  ref.listen(syncStateProvider, (previous, next) {
+    final status = next.value?.status;
+    if (status == SyncStatus.online || status == SyncStatus.syncing) {
+      unawaited(syncer.flush());
+    }
+  }, fireImmediately: true);
+
+  return syncer;
+});
 
 /// 看板列表。drift 的响应式查询——底层数据一变，这里自动重新发出。
 final boardSummariesProvider = StreamProvider<List<BoardSummary>>(
@@ -99,6 +143,18 @@ final cardProvider = StreamProvider.family<CardRow?, String>(
 final commentsProvider = StreamProvider.family<List<CommentRow>, String>(
   (ref, cardId) => ref.watch(repositoryProvider).watchComments(cardId),
 );
+
+final attachmentsProvider =
+    StreamProvider.family<List<AttachmentRow>, String>(
+      (ref, cardId) => ref.watch(repositoryProvider).watchAttachments(cardId),
+    );
+
+/// 每张卡片的附件数，供画布上的角标用。
+final attachmentCountsProvider =
+    StreamProvider.family<Map<String, int>, String>(
+      (ref, boardId) =>
+          ref.watch(repositoryProvider).watchAttachmentCounts(boardId),
+    );
 
 /// 每张卡片的评论数，供画布上的角标用。
 final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(

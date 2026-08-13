@@ -21,3 +21,13 @@ String relativeTime(int? millis) {
   if (then.year == now.year) return '${then.month}月${then.day}日';
   return '${then.year}年${then.month}月${then.day}日';
 }
+
+/// 把字节数说成人话。
+String humanBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}

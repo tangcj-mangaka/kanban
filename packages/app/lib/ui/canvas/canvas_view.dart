@@ -66,11 +66,15 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cards = ref.watch(canvasCardsProvider(widget.boardId)).value ?? const [];
+    final cards =
+        ref.watch(canvasCardsProvider(widget.boardId)).value ?? const [];
     final tags = ref.watch(boardTagsProvider(widget.boardId)).value ?? const [];
-    final cardTags = ref.watch(cardTagMapProvider(widget.boardId)).value ?? const {};
+    final cardTags =
+        ref.watch(cardTagMapProvider(widget.boardId)).value ?? const {};
     final commentCounts =
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
+    final attachmentCounts =
+        ref.watch(attachmentCountsProvider(widget.boardId)).value ?? const {};
     final tagById = {for (final t in tags) t.id: t};
 
     return Column(
@@ -110,10 +114,12 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                       _positionedCard(
                         card,
                         [
-                          for (final id in cardTags[card.id] ?? const <String>[])
+                          for (final id
+                              in cardTags[card.id] ?? const <String>[])
                             if (tagById[id] != null) tagById[id]!,
                         ],
                         commentCounts[card.id] ?? 0,
+                        attachmentCounts[card.id] ?? 0,
                       ),
                     if (cards.isEmpty) const _CanvasHint(),
                   ],
@@ -182,7 +188,8 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
 
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
-      final zoomKey = HardwareKeyboard.instance.isControlPressed ||
+      final zoomKey =
+          HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
       setState(() {
         if (zoomKey) {
@@ -216,13 +223,19 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   }
 
   void _fitAll() {
-    final cards = ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
+    final cards =
+        ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
     if (cards.isEmpty) return;
 
     // 卡片高度是内容撑出来的，这里取个够用的估值——"适应全部"只要求
     // 大致装得下，不需要像素级精确。
     const estimatedHeight = 150.0;
-    var rect = Rect.fromLTWH(cards.first.x, cards.first.y, cards.first.width, estimatedHeight);
+    var rect = Rect.fromLTWH(
+      cards.first.x,
+      cards.first.y,
+      cards.first.width,
+      estimatedHeight,
+    );
     for (final c in cards.skip(1)) {
       rect = rect.expandToInclude(
         Rect.fromLTWH(c.x, c.y, c.width, estimatedHeight),
@@ -238,10 +251,13 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   // 卡片
   // -------------------------------------------------------------------------
 
-  Widget _positionedCard(CardRow card, List<TagRow> tags, int commentCount) {
-    final world = card.id == _draggingId
-        ? _dragWorld
-        : Offset(card.x, card.y);
+  Widget _positionedCard(
+    CardRow card,
+    List<TagRow> tags,
+    int commentCount,
+    int attachmentCount,
+  ) {
+    final world = card.id == _draggingId ? _dragWorld : Offset(card.x, card.y);
     final width = card.id == _resizingId ? _resizeWidth : card.width;
     final screen = _t.toScreen(world);
 
@@ -265,6 +281,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                 card: card.copyWith(width: width),
                 tags: tags,
                 commentCount: commentCount,
+                attachmentCount: attachmentCount,
                 dragging: card.id == _draggingId,
                 editing: card.id == _editingId,
                 titleController: _titleController,
@@ -297,13 +314,18 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                 onUpdate: (globalX) {
                   setState(() {
                     final delta = (globalX - _resizeStartGlobalX) / _t.scale;
-                    _resizeWidth = (_resizeStartWidth + delta).clamp(150.0, 640.0);
+                    _resizeWidth = (_resizeStartWidth + delta).clamp(
+                      150.0,
+                      640.0,
+                    );
                   });
                 },
                 onEnd: () {
                   final w = _resizeWidth;
                   setState(() => _resizingId = null);
-                  ref.read(repositoryProvider).setCardField(
+                  ref
+                      .read(repositoryProvider)
+                      .setCardField(
                         widget.boardId,
                         card.id,
                         CardF.width,
@@ -347,7 +369,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final pos = _dragWorld;
     setState(() => _draggingId = null);
     // 整段拖动只在这里落一次库。
-    ref.read(repositoryProvider).moveCard(widget.boardId, card.id, pos.dx, pos.dy);
+    ref
+        .read(repositoryProvider)
+        .moveCard(widget.boardId, card.id, pos.dx, pos.dy);
   }
 
   Future<void> _onCanvasDoubleTap(TapDownDetails d) async {
@@ -361,7 +385,13 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
       y: world.dy - 20,
     );
     // 新建的卡片直接展开并进入改标题状态——随手戳一下就能开写。
-    await repo.setCardField(widget.boardId, id, CardF.collapsed, false, touch: false);
+    await repo.setCardField(
+      widget.boardId,
+      id,
+      CardF.collapsed,
+      false,
+      touch: false,
+    );
     if (!mounted) return;
     setState(() {
       _editingId = id;
@@ -392,12 +422,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     if (id == null) return;
     final text = _titleController.text.trim();
     setState(() => _editingId = null);
-    ref.read(repositoryProvider).setCardField(
-          widget.boardId,
-          id,
-          CardF.title,
-          text,
-        );
+    ref
+        .read(repositoryProvider)
+        .setCardField(widget.boardId, id, CardF.title, text);
   }
 
   Future<void> _onCardMenu(CardRow card, String action) async {
@@ -461,7 +488,9 @@ class _ResizeHandle extends StatelessWidget {
               width: 8,
               height: 8,
               decoration: BoxDecoration(
-                color: Theme.of(context).kanban.cardBody.withValues(alpha: 0.35),
+                color: Theme.of(
+                  context,
+                ).kanban.cardBody.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
