@@ -53,6 +53,13 @@ class SyncServer {
 
   int get onlineCount => _clients.where((c) => c.authed).length;
 
+  /// 当前有效的配对码，过期或用掉后为 null。
+  String? get currentPairCode {
+    if (_pairCode == null || _pairCodeExpiresAt == null) return null;
+    if (DateTime.now().isAfter(_pairCodeExpiresAt!)) return null;
+    return _pairCode;
+  }
+
   /// 生成一个新的一次性配对码，覆盖掉旧的。
   String newPairCode() {
     _pairCode = generatePairCode();
