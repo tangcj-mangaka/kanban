@@ -77,13 +77,27 @@ jobs:
             exit 1
           fi
 
-          # 用 keytool 验一遍：能列出这个 alias，就说明文件是完好的
-          # 密钥库、密码对得上、alias 也存在。等到 Gradle 那步才炸的话，
-          # 报错埋在几十行 Gradle 输出里，很难看出是密码问题。
+          # 分两步验，把「密码错」和「alias 错」区分开。
+          #
+          # 合成一句 `keytool -list -alias X` 的话，两种错误给的是同一条
+          # 报错，只能靠猜——已经为此白跑过几次 CI 了。
+
+          # 第一步：不带 alias，只验密码能不能打开密钥库。
+          if ! keytool -list -keystore "$KEYSTORE" \
+               -storepass "$STORE_PASSWORD" > /dev/null 2>&1; then
+            echo "::error::ANDROID_STORE_PASSWORD 不对——密钥库打不开。"
+            echo "::error::填的应该是你生成密钥时打的那个密码本身。"
+            echo "::error::（当前这个 secret 有 ${#STORE_PASSWORD} 个字符）"
+            exit 1
+          fi
+
+          # 第二步：密码没问题，再看 alias 在不在。
           if ! keytool -list -keystore "$KEYSTORE" \
                -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
-            echo "::error::密钥库打不开。可能是 ANDROID_STORE_PASSWORD 不对，"
-            echo "::error::或者 ANDROID_KEY_ALIAS（当前：$KEY_ALIAS）在密钥库里不存在。"
+            echo "::error::密码是对的，但 ANDROID_KEY_ALIAS 在密钥库里不存在。"
+            echo "::error::密钥库里实际有这些条目："
+            keytool -list -keystore "$KEYSTORE" -storepass "$STORE_PASSWORD" 2>/dev/null \
+              | grep -i 'PrivateKeyEntry' || true
             exit 1
           fi
 
