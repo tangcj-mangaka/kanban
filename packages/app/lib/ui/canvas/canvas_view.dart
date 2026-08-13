@@ -6,6 +6,7 @@ import 'package:shared/shared.dart';
 
 import '../../data/database.dart';
 import '../../providers.dart';
+import '../board/board_search.dart';
 import '../boards/board_dialogs.dart';
 import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
@@ -23,7 +24,17 @@ import 'grid_painter.dart';
 class CanvasView extends ConsumerStatefulWidget {
   final String boardId;
 
-  const CanvasView({super.key, required this.boardId});
+  /// 板内搜索。有词时命中的卡片保持原样，其余淡下去。
+  ///
+  /// 画布**不过滤**卡片，只是调明暗：卡片在画布上的位置本身就是信息，
+  /// 把不匹配的抽走会让人失去方位感，回头还得重新找。
+  final BoardSearch search;
+
+  const CanvasView({
+    super.key,
+    required this.boardId,
+    this.search = BoardSearch.none,
+  });
 
   @override
   ConsumerState<CanvasView> createState() => _CanvasViewState();
@@ -55,6 +66,41 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   final _titleFocus = FocusNode();
 
   final _viewportKey = GlobalKey();
+
+  @override
+  void didUpdateWidget(CanvasView old) {
+    super.didUpdateWidget(old);
+    // 按了「上一个/下一个」才挪视角。光比 focusCardId 不够——只有一张
+    // 命中卡片时它一直不变，得靠 token 才知道用户又按了一次。
+    if (widget.search.focusToken != old.search.focusToken &&
+        widget.search.focusCardId != null) {
+      _centerOn(widget.search.focusCardId!);
+    }
+  }
+
+  /// 把视角平移到某张卡片上，**不改缩放**。
+  ///
+  /// 定位时顺手换个缩放会让人分不清自己是被挪走了还是缩放变了。
+  void _centerOn(String cardId) {
+    final cards =
+        ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
+    final i = cards.indexWhere((c) => c.id == cardId);
+    if (i < 0) return;
+    final card = cards[i];
+
+    final box = _viewportKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+
+    // 卡片高度是内容撑出来的，量不到；取个估值让它大致落在视野中央即可。
+    final world = Offset(card.x + card.width / 2, card.y + 70);
+    final viewCenter = Offset(box.size.width / 2, box.size.height / 2);
+    setState(
+      () => _t = CanvasTransform(
+        offset: viewCenter - world * _t.scale,
+        scale: _t.scale,
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -287,13 +333,20 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final width = card.id == _resizingId ? _resizeWidth : card.width;
     final screen = _t.toScreen(world);
 
+    final search = widget.search;
+    final dimmed = search.active && !search.matches(card);
+    final focused = search.active && card.id == search.focusCardId;
+
     return Positioned(
       left: screen.dx,
       top: screen.dy,
       child: Transform.scale(
         scale: _t.scale,
         alignment: Alignment.topLeft,
-        child: Stack(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 160),
+          opacity: dimmed ? 0.22 : 1,
+          child: Stack(
           clipBehavior: Clip.none,
           children: [
             GestureDetector(
@@ -325,6 +378,22 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                 onMenuAction: (action) => _onCardMenu(card, action),
               ),
             ),
+            // 当前定位到的那张套一圈光环，好在一片命中里认出「就是这张」。
+            // 画在卡片之上、且不吃点击，不然会挡住拖动和双击。
+            if (focused)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               right: -3,
               bottom: -3,
@@ -362,6 +431,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );

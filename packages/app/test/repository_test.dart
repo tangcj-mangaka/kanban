@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanban/data/database.dart';
 import 'package:kanban/data/repository.dart';
+import 'package:shared/shared.dart';
 
 void main() {
   late AppDatabase db;
@@ -282,6 +283,129 @@ void main() {
 
       final summary = (await repo.watchBoardSummaries().first).single;
       expect(summary.cardCount, 1);
+    });
+  });
+
+  group('搜索', () {
+    Future<String> withText(
+      String boardId, {
+      String title = '',
+      String body = '',
+    }) async {
+      final id = await repo.createCard(boardId: boardId, x: 0, y: 0);
+      if (title.isNotEmpty) await repo.setCardField(boardId, id, CardF.title, title);
+      if (body.isNotEmpty) await repo.setCardField(boardId, id, CardF.body, body);
+      return id;
+    }
+
+    test('标题和正文都能命中，结果带上所属看板', () async {
+      final b1 = await repo.createBoard(name: '工作');
+      final b2 = await repo.createBoard(name: '家里');
+      await withText(b1, title: '修水管');
+      await withText(b2, body: '周末去买水管配件');
+      await withText(b1, title: '写周报');
+
+      final hits = await repo.searchCards('水管').first;
+      expect(hits, hasLength(2));
+      expect(
+        hits.map((h) => h.boardName).toSet(),
+        {'工作', '家里'},
+        reason: '跨看板搜索要能同时搜到两块板上的卡片',
+      );
+    });
+
+    test('空查询返回空，不是返回全部', () async {
+      final b = await repo.createBoard(name: 'B');
+      await withText(b, title: '随便什么');
+      expect(await repo.searchCards('').first, isEmpty);
+      expect(await repo.searchCards('   ').first, isEmpty);
+    });
+
+    test('百分号是普通字符，不是通配符', () async {
+      // 这条是这次从 LIKE 换成 instr 的原因：SQLite 的 LIKE 没有默认转义符，
+      // 用 LIKE 的话搜 '%' 会匹配到每一张卡片。
+      final b = await repo.createBoard(name: 'B');
+      await withText(b, title: '完成度 80%');
+      await withText(b, title: '毫不相干');
+
+      final hits = await repo.searchCards('%').first;
+      expect(hits, hasLength(1));
+      expect(hits.single.card.title, '完成度 80%');
+    });
+
+    test('下划线是普通字符，不是任意单字', () async {
+      final b = await repo.createBoard(name: 'B');
+      await withText(b, title: 'snake_case 命名');
+      await withText(b, title: 'abc');
+
+      final hits = await repo.searchCards('e_c').first;
+      expect(hits, hasLength(1), reason: '_ 若当通配符，abc 也会被 e_c 之类的模式牵连');
+      expect(hits.single.card.title, 'snake_case 命名');
+    });
+
+    test('限定看板时不串板', () async {
+      final b1 = await repo.createBoard(name: '工作');
+      final b2 = await repo.createBoard(name: '家里');
+      await withText(b1, title: '共同关键词');
+      await withText(b2, title: '共同关键词');
+
+      expect(await repo.searchCards('共同关键词').first, hasLength(2));
+      final scoped = await repo.searchCards('共同关键词', boardId: b1).first;
+      expect(scoped, hasLength(1));
+      expect(scoped.single.boardName, '工作');
+    });
+
+    test('删掉的卡片、删掉的看板都搜不到', () async {
+      final b1 = await repo.createBoard(name: '留着');
+      final b2 = await repo.createBoard(name: '要删的板');
+      final gone = await withText(b1, title: '目标');
+      await withText(b1, title: '目标 保留');
+      await withText(b2, title: '目标');
+
+      await repo.deleteCard(b1, gone);
+      await repo.deleteBoard(b2);
+
+      final hits = await repo.searchCards('目标').first;
+      expect(hits, hasLength(1));
+      expect(hits.single.card.title, '目标 保留');
+    });
+
+    test('归档的卡片仍然搜得到', () async {
+      // 干草仓库是「收起来」不是「删掉」，全局搜索得能把它捞出来，
+      // 否则归档等于把卡片弄丢。
+      final b = await repo.createBoard(name: 'B');
+      final id = await withText(b, title: '去年的方案');
+      await repo.archiveCard(b, id);
+
+      final hits = await repo.searchCards('方案').first;
+      expect(hits, hasLength(1));
+      expect(hits.single.card.archived, isTrue);
+    });
+
+    test('结果按最近修改排序', () async {
+      final b = await repo.createBoard(name: 'B');
+      await withText(b, title: '关键词 老的');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await withText(b, title: '关键词 新的');
+
+      final hits = await repo.searchCards('关键词').first;
+      expect(hits.map((h) => h.card.title).toList(), ['关键词 新的', '关键词 老的']);
+    });
+
+    test('改完卡片，已订阅的搜索结果会自己更新', () async {
+      // customSelect 得声明 readsFrom，不然 drift 不知道该在哪张表变化时
+      // 重新跑这条查询——这正是之前 _writeField 用 customStatement 踩过的坑。
+      final b = await repo.createBoard(name: 'B');
+      final stream = repo.searchCards('新加的');
+      expect(await stream.first, isEmpty);
+
+      final id = await repo.createCard(boardId: b, x: 0, y: 0);
+      await repo.setCardField(b, id, CardF.title, '新加的卡片');
+
+      await expectLater(
+        stream,
+        emitsThrough(predicate<List<SearchHit>>((hits) => hits.length == 1)),
+      );
     });
   });
 }

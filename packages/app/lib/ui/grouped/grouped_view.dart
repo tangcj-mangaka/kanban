@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../board/board_search.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
@@ -34,7 +35,15 @@ enum GroupSort {
 class GroupedView extends ConsumerStatefulWidget {
   final String boardId;
 
-  const GroupedView({super.key, required this.boardId});
+  /// 板内搜索。这里是**过滤**而不是像画布那样淡化：
+  /// 列表里位置不承载信息，留一堆灰条只会让人多滑几屏。
+  final BoardSearch search;
+
+  const GroupedView({
+    super.key,
+    required this.boardId,
+    this.search = BoardSearch.none,
+  });
 
   @override
   ConsumerState<GroupedView> createState() => _GroupedViewState();
@@ -67,7 +76,10 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
         ref.watch(commentCountsProvider(widget.boardId)).value ?? const {};
 
     final compact = isCompact(context);
-    final columns = _buildColumns(cards, tags, cardTags);
+    final matched = widget.search.active
+        ? cards.where(widget.search.matches).toList()
+        : cards;
+    final columns = _buildColumns(matched, tags, cardTags);
     final visible = _showEmpty
         ? columns
         : columns.where((c) => c.cards.isNotEmpty).toList();

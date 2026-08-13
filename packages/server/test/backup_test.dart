@@ -108,4 +108,48 @@ void main() {
       expect(File(p.join(dir.path, 'kanban-server.sqlite')).existsSync(), isTrue);
     });
   });
+
+  group('自动备份', () {
+    test('一次都没备过时读不到时间', () {
+      expect(lastBackupTime(dir.path), isNull);
+    });
+
+    test('从文件名读时间，取最新的那份', () async {
+      write('backup-20260101-120000.zip', 'x');
+      write('backup-20260813-091500.zip', 'x');
+      // 不是备份的文件不该被当成时间戳。
+      write('kanban-server.sqlite', 'x');
+
+      expect(lastBackupTime(dir.path), DateTime(2026, 8, 13, 9, 15, 0));
+    });
+
+    test('刚备份过就不再备', () async {
+      write('data.txt', 'x');
+
+      final first = await backupIfDue(dir.path);
+      expect(first, isNotNull);
+
+      final second = await backupIfDue(dir.path);
+      expect(second, isNull, reason: '不到 24 小时不该重复备份');
+    });
+
+    test('距上次够久了就补一次，并顺带清理旧的', () async {
+      write('data.txt', 'x');
+      // 摆 8 份陈年备份，留 3 份。
+      for (var i = 1; i <= 8; i++) {
+        final d = i.toString().padLeft(2, '0');
+        File(p.join(dir.path, 'backup-202601$d-120000.zip')).writeAsStringSync('x');
+      }
+
+      final made = await backupIfDue(dir.path, keep: 3);
+      expect(made, isNotNull, reason: '上次备份是 2026 年 1 月，早就该备了');
+
+      final left = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('backup-'))
+          .length;
+      expect(left, 3);
+    });
+  });
 }

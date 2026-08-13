@@ -66,3 +66,50 @@ Future<int> pruneBackups(String dataDir, {int keep = 7}) async {
   }
   return removed;
 }
+
+/// 最近一次备份的时间；一次都没备过就是 null。
+///
+/// 读的是文件名里的时间戳而不是 mtime：拷贝和恢复都会改 mtime，
+/// 而文件名是生成时就定死的。
+DateTime? lastBackupTime(String dataDir) {
+  final dir = Directory(dataDir);
+  if (!dir.existsSync()) return null;
+
+  DateTime? newest;
+  for (final f in dir.listSync().whereType<File>()) {
+    final t = _parseStamp(p.basename(f.path));
+    if (t == null) continue;
+    if (newest == null || t.isAfter(newest)) newest = t;
+  }
+  return newest;
+}
+
+/// 从 `backup-20260813-091500.zip` 里解出时间。
+DateTime? _parseStamp(String name) {
+  final m = RegExp(r'^backup-(\d{8})-(\d{6})\.zip$').firstMatch(name);
+  if (m == null) return null;
+  final d = m.group(1)!;
+  final t = m.group(2)!;
+  return DateTime.tryParse(
+    '${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)} '
+    '${t.substring(0, 2)}:${t.substring(2, 4)}:${t.substring(4, 6)}',
+  );
+}
+
+/// 距上次备份满了 [every] 就备一次，否则什么都不做。
+///
+/// 不用「每 24 小时触发一次的定时器」，是因为这台服务器是**用户的笔记本**：
+/// 合盖、关机、重启都会把定时器清零。真按定时器算，一台每天晚上关机的机器
+/// 可能一次备份都轮不上。改成看「上次备份是什么时候」，开机后补上就行。
+Future<File?> backupIfDue(
+  String dataDir, {
+  Duration every = const Duration(hours: 24),
+  int keep = 7,
+}) async {
+  final last = lastBackupTime(dataDir);
+  if (last != null && DateTime.now().difference(last) < every) return null;
+
+  final file = await createBackup(dataDir);
+  await pruneBackups(dataDir, keep: keep);
+  return file;
+}

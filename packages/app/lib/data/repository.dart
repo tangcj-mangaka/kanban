@@ -26,6 +26,22 @@ class BoardSummary {
   });
 }
 
+/// 一条搜索结果：命中的卡片，以及它所属看板的名字和颜色。
+///
+/// 只带名字和颜色而不是整行看板数据——搜索结果要显示的就这两样。
+@immutable
+class SearchHit {
+  final CardRow card;
+  final String boardName;
+  final String? boardColor;
+
+  const SearchHit({
+    required this.card,
+    required this.boardName,
+    required this.boardColor,
+  });
+}
+
 /// 领域操作层。
 ///
 /// UI 只跟这一层打交道，不直接碰 op。每个方法负责把一次用户动作翻译成
@@ -496,6 +512,55 @@ class Repository {
     field: CardTagF.deleted,
     value: !on,
   );
+
+  // -------------------------------------------------------------------------
+  // 搜索
+  // -------------------------------------------------------------------------
+
+  /// 跨看板搜索卡片。
+  ///
+  /// 用 `instr()` 而不是设计文档里写的 FTS5。理由是算过账：个人看板撑死
+  /// 几千张卡片，扫两列文本是亚毫秒级；而 FTS5 要建虚拟表、要在 op 应用
+  /// 路径上维护索引、要处理迁移。**为了测不出来的性能差异引入这些复杂度
+  /// 不划算。** 真到几万张卡片时再换，届时这个方法的签名不用变。
+  ///
+  /// 用 instr 而不是 LIKE，是因为 **SQLite 的 LIKE 没有默认转义符**：
+  /// 不加 ESCAPE 子句的话，用户搜 `%` 会匹配到所有卡片、搜 `_` 会匹配到
+  /// 任意单字。instr 是纯粹的子串查找，没有通配符这回事。
+  ///
+  /// 子串匹配对中文也天然可用，不需要分词——FTS5 反而要专门配 trigram。
+  Stream<List<SearchHit>> searchCards(String query, {String? boardId}) {
+    final text = query.trim();
+    if (text.isEmpty) return Stream.value(const []);
+
+    return db
+        .customSelect(
+          'SELECT c.*, b.name AS b_name, b.color AS b_color '
+          'FROM cards c JOIN boards b ON b.id = c.board_id '
+          'WHERE c.deleted = 0 AND b.deleted = 0 '
+          'AND (instr(c.title, ?) > 0 OR instr(c.body, ?) > 0) '
+          'AND (? IS NULL OR c.board_id = ?) '
+          'ORDER BY c.updated_at DESC LIMIT 200',
+          variables: [
+            Variable(text),
+            Variable(text),
+            Variable(boardId),
+            Variable(boardId),
+          ],
+          readsFrom: {db.cards, db.boards},
+        )
+        .watch()
+        .map(
+          (rows) => [
+            for (final r in rows)
+              SearchHit(
+                card: db.cards.map(r.data),
+                boardName: r.read<String>('b_name'),
+                boardColor: r.data['b_color'] as String?,
+              ),
+          ],
+        );
+  }
 
   // -------------------------------------------------------------------------
   // 附件

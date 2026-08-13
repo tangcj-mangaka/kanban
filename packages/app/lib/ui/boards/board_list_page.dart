@@ -14,14 +14,28 @@ import 'board_dialogs.dart';
 
 /// 看板列表页 —— 应用入口。
 class BoardListPage extends ConsumerStatefulWidget {
-  const BoardListPage({super.key});
+  /// 进来时搜索框里已经填好的词。
+  ///
+  /// 给截图验证和以后的「从外部跳进来直接搜」用；正常打开是空的。
+  final String initialQuery;
+
+  const BoardListPage({super.key, this.initialQuery = ''});
 
   @override
   ConsumerState<BoardListPage> createState() => _BoardListPageState();
 }
 
 class _BoardListPageState extends ConsumerState<BoardListPage> {
-  String _query = '';
+  late String _query = widget.initialQuery;
+  late final _searchController = TextEditingController(
+    text: widget.initialQuery,
+  );
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +47,7 @@ class _BoardListPageState extends ConsumerState<BoardListPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _Header(
+              controller: _searchController,
               onSearch: (q) => setState(() => _query = q.trim()),
               onCreate: _createBoard,
             ),
@@ -41,15 +56,16 @@ class _BoardListPageState extends ConsumerState<BoardListPage> {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => _ErrorState(error: e),
                 data: (boards) {
-                  final visible = _query.isEmpty
-                      ? boards
-                      : boards
-                            .where((b) => b.board.name.contains(_query))
-                            .toList();
-
+                  if (_query.isNotEmpty) {
+                    return _SearchResults(
+                      query: _query,
+                      boards: boards
+                          .where((b) => b.board.name.contains(_query))
+                          .toList(),
+                    );
+                  }
                   if (boards.isEmpty) return _EmptyState(onCreate: _createBoard);
-                  if (visible.isEmpty) return _NoMatchState(query: _query);
-                  return _BoardGrid(boards: visible);
+                  return _BoardGrid(boards: boards);
                 },
               ),
             ),
@@ -69,10 +85,15 @@ class _BoardListPageState extends ConsumerState<BoardListPage> {
 // ---------------------------------------------------------------------------
 
 class _Header extends ConsumerWidget {
+  final TextEditingController controller;
   final ValueChanged<String> onSearch;
   final VoidCallback onCreate;
 
-  const _Header({required this.onSearch, required this.onCreate});
+  const _Header({
+    required this.controller,
+    required this.onSearch,
+    required this.onCreate,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -136,9 +157,10 @@ class _Header extends ConsumerWidget {
           SizedBox(
             width: compact ? double.infinity : 340,
             child: TextField(
+              controller: controller,
               onChanged: onSearch,
               decoration: const InputDecoration(
-                hintText: '搜索看板',
+                hintText: '搜索看板和卡片',
                 prefixIcon: Icon(Icons.search, size: 20),
               ),
             ),
@@ -541,6 +563,232 @@ class _EmptyState extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 搜索结果页：上半是名字命中的看板，下半是内容命中的卡片。
+///
+/// 卡片结果按看板分组——同名的卡片在不同板上意思完全不同，不标出处
+/// 等于让用户自己猜。
+class _SearchResults extends ConsumerWidget {
+  final String query;
+  final List<BoardSummary> boards;
+
+  const _SearchResults({required this.query, required this.boards});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final k = theme.kanban;
+    final pad = isCompact(context) ? 16.0 : 28.0;
+    final hitsAsync = ref.watch(searchProvider(query));
+    final hits = hitsAsync.value ?? const <SearchHit>[];
+
+    // 结果还在路上时不要急着喊「什么都没搜到」——那会在每次敲键时闪一下。
+    if (boards.isEmpty && hits.isEmpty && !hitsAsync.isLoading) {
+      return _NoMatchState(query: query);
+    }
+
+    // 按看板分组，组内保持 searchCards 给的「最近修改优先」顺序。
+    final grouped = <String, List<SearchHit>>{};
+    for (final h in hits) {
+      grouped.putIfAbsent(h.boardName, () => []).add(h);
+    }
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(pad, pad - 6, pad, pad),
+      children: [
+        if (boards.isNotEmpty) ...[
+          _SectionLabel(text: '看板 · ${boards.length}'),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 260,
+              childAspectRatio: 1.75,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            itemCount: boards.length,
+            // 搜索结果里不排序拖动——拖的是过滤后的子集，落位含义不清楚。
+            itemBuilder: (_, i) => _BoardTile(summary: boards[i]),
+          ),
+          const SizedBox(height: 26),
+        ],
+        if (hits.isNotEmpty) ...[
+          _SectionLabel(
+            text: hits.length >= 200 ? '卡片 · 200+' : '卡片 · ${hits.length}',
+          ),
+          const SizedBox(height: 10),
+          for (final entry in grouped.entries) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 8, 0, 6),
+              child: Text(
+                entry.key.isEmpty ? '未命名看板' : entry.key,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: k.cardBody,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            for (final hit in entry.value)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _CardHitTile(hit: hit, query: query),
+              ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+
+  const _SectionLabel({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).kanban.cardBody.withValues(alpha: 0.8),
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.6,
+      ),
+    );
+  }
+}
+
+/// 一条卡片搜索结果。点进去直接开卡片详情，不用用户自己在板上找。
+class _CardHitTile extends StatelessWidget {
+  final SearchHit hit;
+  final String query;
+
+  const _CardHitTile({required this.hit, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final k = theme.kanban;
+    final card = hit.card;
+
+    return Material(
+      color: k.cardSurface(card.color),
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                BoardPage(boardId: card.boardId, openCardId: card.id),
+          ),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: k.cardBorder),
+          ),
+          padding: const EdgeInsets.fromLTRB(13, 10, 12, 11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Highlighted(
+                      text: card.title.isEmpty ? '未命名' : card.title,
+                      query: query,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: card.title.isEmpty
+                            ? k.cardBody.withValues(alpha: 0.6)
+                            : k.cardTitle,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (card.body.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      _Highlighted(
+                        text: snippetAround(card.body, query),
+                        query: query,
+                        maxLines: 2,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: k.cardBody,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (card.archived) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: '在干草仓库里',
+                  child: Icon(
+                    Icons.inventory_2_outlined,
+                    size: 15,
+                    color: k.cardBody.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 把 [query] 在 [text] 里出现的地方加重显示。
+///
+/// 不区分大小写地找位置，但显示的始终是原文——按原样切片再拼回去，
+/// 所以中英文、全角半角都不会被改写。
+class _Highlighted extends StatelessWidget {
+  final String text;
+  final String query;
+  final TextStyle? style;
+  final int maxLines;
+
+  const _Highlighted({
+    required this.text,
+    required this.query,
+    this.style,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <TextSpan>[];
+    final hay = text.toLowerCase();
+    final needle = query.toLowerCase();
+
+    var i = 0;
+    while (needle.isNotEmpty) {
+      final at = hay.indexOf(needle, i);
+      if (at < 0) break;
+      if (at > i) spans.add(TextSpan(text: text.substring(i, at)));
+      spans.add(
+        TextSpan(
+          text: text.substring(at, at + needle.length),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+      i = at + needle.length;
+    }
+    if (i < text.length) spans.add(TextSpan(text: text.substring(i)));
+
+    return Text.rich(
+      TextSpan(style: style, children: spans),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

@@ -66,7 +66,9 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const _FirstBoardCanvas(),
+      home: _globalSearch.isNotEmpty
+          ? BoardListPage(initialQuery: _globalSearch)
+          : const _FirstBoardCanvas(),
     );
   }
 }
@@ -85,6 +87,16 @@ const _initialView = String.fromEnvironment('VIEW');
 const _syncHost = String.fromEnvironment('SYNC_HOST');
 const _syncPort = int.fromEnvironment('SYNC_PORT', defaultValue: 8765);
 const _syncCode = String.fromEnvironment('SYNC_CODE');
+
+/// `--dart-define=SEARCH=词` 时打开看板列表页并预填全局搜索。
+///
+/// `--dart-define=BOARD_SEARCH=词` 时进第一块看板并展开板内搜索。
+/// 都是因为截图验证没法自动敲键盘。
+const _globalSearch = String.fromEnvironment('SEARCH');
+const _boardSearch = String.fromEnvironment('BOARD_SEARCH');
+
+/// `--dart-define=FOCUS=1` 时进来就定位到第一个命中。
+const _focusFirst = bool.fromEnvironment('FOCUS');
 
 /// `--dart-define=THEME=dark|light` 时强制主题。
 ///
@@ -129,6 +141,8 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
 
     return BoardPage(
       boardId: boardId,
+      initialSearch: _boardSearch.isEmpty ? null : _boardSearch,
+      focusFirstMatch: _focusFirst,
       // 不指定时传 null，让 BoardPage 按屏幕宽度自己定
       // （手机默认分组视图）。写死 canvas 会把那个默认绕过去。
       initialView: switch (_initialView) {

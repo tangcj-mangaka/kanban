@@ -79,6 +79,23 @@ Future<void> main(List<String> args) async {
 
   await collectFiles();
   Timer.periodic(const Duration(hours: 24), (_) => collectFiles());
+
+  // 自动备份：开机补一次，之后每小时问一次「够 24 小时了吗」。
+  //
+  // 频繁问、按上次备份时间决定做不做，比「每 24 小时干一次」可靠——
+  // 见 backupIfDue 的注释。
+  Future<void> autoBackup() async {
+    try {
+      final file = await backupIfDue(dataDir);
+      if (file != null) _log('已自动备份到 ${p.basename(file.path)}');
+    } catch (e) {
+      // 备份失败不该把服务器带下去——同步比备份重要得多。
+      _log('自动备份失败：$e');
+    }
+  }
+
+  await autoBackup();
+  Timer.periodic(const Duration(hours: 1), (_) => autoBackup());
   _log('监听 ${server.address.address}:${server.port}');
 
   final serverName = opts.option('name') ?? Platform.localHostname;

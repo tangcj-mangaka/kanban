@@ -161,19 +161,63 @@ final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(
   (ref, boardId) => ref.watch(repositoryProvider).watchCommentCounts(boardId),
 );
 
-/// 主题模式。P5 会持久化到设置里，现在每次启动都从跟随系统开始。
+/// 全局搜索结果，key 是搜索词。
+///
+/// **必须 autoDispose**：用户每敲一个字就是一个新的 family key，不自动回收
+/// 的话，搜一次「水管配件」会留下 4 个订阅着数据库的 provider 永不释放。
+final searchProvider = StreamProvider.autoDispose.family<List<SearchHit>, String>(
+  (ref, query) => ref.watch(repositoryProvider).searchCards(query),
+);
+
+/// 主题模式，存在 settings 表里。
+///
+/// 不用 shared_preferences：设置表已经在同一个 sqlite 里了，多引一个插件
+/// 就多一处各平台文件位置不同的问题。
+///
+/// **不进 op 日志**，所以不会同步到别的设备——外观是「这台机器」的偏好。
+/// 台式机开深色、手机跟随系统，是很正常的用法。
 class ThemeModeNotifier extends Notifier<ThemeMode> {
+  static const _key = 'theme_mode';
+
+  /// 用户是否已经自己动过。
+  ///
+  /// 读盘是异步的：如果用户在读完之前就点了切换，读盘结果回来会把
+  /// 他刚选的覆盖掉——按钮看着像失灵。有这个标记就让用户说了算。
+  bool _touched = false;
+
   @override
-  ThemeMode build() => ThemeMode.system;
+  ThemeMode build() {
+    // 读盘是异步的，而 build 必须同步返回。所以先给个跟随系统，
+    // 读到了再覆盖——启动瞬间可能闪一下，比阻塞首帧强。
+    _load();
+    return ThemeMode.system;
+  }
+
+  Future<void> _load() async {
+    final saved = await ref.read(databaseProvider).getSetting(_key);
+    if (_touched) return;
+    final mode = _parse(saved);
+    if (mode != null) state = mode;
+  }
 
   /// 在「跟随系统 → 浅色 → 深色」之间轮换。
   void cycle() {
+    _touched = true;
     state = switch (state) {
       ThemeMode.system => ThemeMode.light,
       ThemeMode.light => ThemeMode.dark,
       ThemeMode.dark => ThemeMode.system,
     };
+    // 存盘失败也不该拦着用户换主题，所以不 await。
+    ref.read(databaseProvider).setSetting(_key, state.name);
   }
+
+  static ThemeMode? _parse(String? name) => switch (name) {
+    'light' => ThemeMode.light,
+    'dark' => ThemeMode.dark,
+    'system' => ThemeMode.system,
+    _ => null,
+  };
 }
 
 final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
