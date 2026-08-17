@@ -40,6 +40,7 @@ int compareOpOrder(int? aSeq, int aLocal, int? bSeq, int bLocal) {
     Comments,
     Settings,
     FileCaches,
+    Conflicts,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -52,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -62,6 +63,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) await m.createTable(settings);
       // v3：加了附件的本机缓存表。
       if (from < 3) await m.createTable(fileCaches);
+      // v5：op 记下产生时已知的序号，用来判并发；另加冲突记录表。
+      if (from < 5) {
+        await m.addColumn(ops, ops.baseSeq);
+        await m.createTable(conflicts);
+      }
       // v4：卡片加了「完成」勾。
       if (from < 4) {
         await m.addColumn(cards, cards.done);

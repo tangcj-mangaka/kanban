@@ -33,8 +33,36 @@ class Ops extends Table {
   /// 客户端本地时间（毫秒），只用于显示，不参与排序。
   IntColumn get wallTs => integer()();
 
+  /// 产生这条 op 时，产生它的设备已知的最大服务端序号。
+  ///
+  /// 用来判断两条改动是不是真并发，见 shared 里的 `areConcurrent`。
+  /// 旧版本产生的 op 没有这个值，为 null。
+  IntColumn get baseSeq => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {opId};
+}
+
+/// 检测到的并发改动。**本机数据，不同步。**
+///
+/// 每台设备各自记自己发现的冲突：三台设备都会收到彼此的改动，也就各自
+/// 都能独立发现同一个冲突。做成同步的话，「已经看过了」这个状态也得同步，
+/// 而那本身又会产生冲突——不值得。
+///
+/// 一条记录 = 某个实体的某个字段上曾经发生过并发改动。用户看过之后清掉。
+@DataClassName('ConflictRow')
+class Conflicts extends Table {
+  TextColumn get entityId => text()();
+  TextColumn get field => text()();
+
+  /// 发现的时间，用于显示。
+  IntColumn get detectedAt => integer()();
+
+  /// 所属看板，方便按板查。
+  TextColumn get boardId => text().withDefault(const Constant(''))();
+
+  @override
+  Set<Column> get primaryKey => {entityId, field};
 }
 
 /// 每个字段当前由哪条 op 说了算。

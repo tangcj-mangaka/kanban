@@ -119,6 +119,23 @@ class Op {
   /// 绝不参与排序或冲突判定——那是 [seq] 的职责。
   final int wallTs;
 
+  /// 产生这条 op 时，这台设备已经知道到服务端的哪一号。
+  ///
+  /// 用来判断两条改动是不是**真并发**。只靠 [seq] 判断不出来：seq 只说
+  /// 谁先到服务器，说不出「做这个改动的人当时看没看见对方的改动」。
+  ///
+  /// 判据是：a 和 b 并发 ⟺ `a.baseSeq < b.seq` 且 `b.baseSeq < a.seq`
+  /// ——双方都是在没见过对方的情况下做出的。
+  ///
+  /// 举个必须靠它才能判对的例子：笔记本兼做服务器、一直在线，它的改动
+  /// 立刻拿到小号；手机离线改完后来才连上，拿到大号。等笔记本收到手机
+  /// 那条时，自己那条**早就有号了**，光看「有没有同步过」会漏判。
+  ///
+  /// 远端 op 也带着它（发送方填的），所以两边都能算。旧版本发来的 op
+  /// 没有这个字段，此时为 null，按「无法判定」处理——不报冲突，
+  /// 宁可漏报也不错报。
+  final int? baseSeq;
+
   const Op({
     this.seq,
     required this.opId,
@@ -129,6 +146,7 @@ class Op {
     required this.value,
     required this.deviceId,
     required this.wallTs,
+    this.baseSeq,
   });
 
   /// 是否已被服务端确认。未确认的 op 留在本地待发队列里。
@@ -144,6 +162,7 @@ class Op {
     value: value,
     deviceId: deviceId,
     wallTs: wallTs,
+    baseSeq: baseSeq,
   );
 
   Map<String, Object?> toJson() => {
@@ -156,6 +175,7 @@ class Op {
     'value': value,
     'device_id': deviceId,
     'wall_ts': wallTs,
+    if (baseSeq != null) 'base_seq': baseSeq,
   };
 
   factory Op.fromJson(Map<String, Object?> json) => Op(
@@ -168,6 +188,7 @@ class Op {
     value: json['value'],
     deviceId: json['device_id']! as String,
     wallTs: json['wall_ts']! as int,
+    baseSeq: json['base_seq'] as int?,
   );
 
   @override
@@ -179,4 +200,24 @@ class Op {
 
   @override
   int get hashCode => opId.hashCode;
+}
+
+/// 两条改动是不是**真并发**——双方都没见过对方就各自改了。
+///
+/// 光比 [Op.seq] 判断不出来：seq 只说谁的改动先到服务器，说不出做改动的
+/// 人当时看没看见对方那条。所以要用 [Op.baseSeq]（产生时已知的最大序号）
+/// 交叉比一次。
+///
+/// [aBaseSeq] 或 [bBaseSeq] 为 null 时返回 false——那是旧版本产生的 op，
+/// 无从判断，此时**宁可漏报也不错报**：错报一次冲突会让用户白跑一趟去
+/// 核对两份其实没冲突的内容，比漏报更烦人。
+bool areConcurrent({
+  required int? aSeq,
+  required int? aBaseSeq,
+  required int? bSeq,
+  required int? bBaseSeq,
+}) {
+  if (aSeq == null || bSeq == null) return false;
+  if (aBaseSeq == null || bBaseSeq == null) return false;
+  return aBaseSeq < bSeq && bBaseSeq < aSeq;
 }

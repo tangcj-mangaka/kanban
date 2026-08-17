@@ -108,6 +108,17 @@ class $OpsTable extends Ops with TableInfo<$OpsTable, OpRow> {
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _baseSeqMeta = const VerificationMeta(
+    'baseSeq',
+  );
+  @override
+  late final GeneratedColumn<int> baseSeq = GeneratedColumn<int>(
+    'base_seq',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     opId,
@@ -120,6 +131,7 @@ class $OpsTable extends Ops with TableInfo<$OpsTable, OpRow> {
     valueJson,
     deviceId,
     wallTs,
+    baseSeq,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -211,6 +223,12 @@ class $OpsTable extends Ops with TableInfo<$OpsTable, OpRow> {
     } else if (isInserting) {
       context.missing(_wallTsMeta);
     }
+    if (data.containsKey('base_seq')) {
+      context.handle(
+        _baseSeqMeta,
+        baseSeq.isAcceptableOrUnknown(data['base_seq']!, _baseSeqMeta),
+      );
+    }
     return context;
   }
 
@@ -260,6 +278,10 @@ class $OpsTable extends Ops with TableInfo<$OpsTable, OpRow> {
         DriftSqlType.int,
         data['${effectivePrefix}wall_ts'],
       )!,
+      baseSeq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}base_seq'],
+      ),
     );
   }
 
@@ -295,6 +317,12 @@ class OpRow extends DataClass implements Insertable<OpRow> {
 
   /// 客户端本地时间（毫秒），只用于显示，不参与排序。
   final int wallTs;
+
+  /// 产生这条 op 时，产生它的设备已知的最大服务端序号。
+  ///
+  /// 用来判断两条改动是不是真并发，见 shared 里的 `areConcurrent`。
+  /// 旧版本产生的 op 没有这个值，为 null。
+  final int? baseSeq;
   const OpRow({
     required this.opId,
     this.seq,
@@ -306,6 +334,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
     required this.valueJson,
     required this.deviceId,
     required this.wallTs,
+    this.baseSeq,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -322,6 +351,9 @@ class OpRow extends DataClass implements Insertable<OpRow> {
     map['value_json'] = Variable<String>(valueJson);
     map['device_id'] = Variable<String>(deviceId);
     map['wall_ts'] = Variable<int>(wallTs);
+    if (!nullToAbsent || baseSeq != null) {
+      map['base_seq'] = Variable<int>(baseSeq);
+    }
     return map;
   }
 
@@ -337,6 +369,9 @@ class OpRow extends DataClass implements Insertable<OpRow> {
       valueJson: Value(valueJson),
       deviceId: Value(deviceId),
       wallTs: Value(wallTs),
+      baseSeq: baseSeq == null && nullToAbsent
+          ? const Value.absent()
+          : Value(baseSeq),
     );
   }
 
@@ -356,6 +391,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
       valueJson: serializer.fromJson<String>(json['valueJson']),
       deviceId: serializer.fromJson<String>(json['deviceId']),
       wallTs: serializer.fromJson<int>(json['wallTs']),
+      baseSeq: serializer.fromJson<int?>(json['baseSeq']),
     );
   }
   @override
@@ -372,6 +408,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
       'valueJson': serializer.toJson<String>(valueJson),
       'deviceId': serializer.toJson<String>(deviceId),
       'wallTs': serializer.toJson<int>(wallTs),
+      'baseSeq': serializer.toJson<int?>(baseSeq),
     };
   }
 
@@ -386,6 +423,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
     String? valueJson,
     String? deviceId,
     int? wallTs,
+    Value<int?> baseSeq = const Value.absent(),
   }) => OpRow(
     opId: opId ?? this.opId,
     seq: seq.present ? seq.value : this.seq,
@@ -397,6 +435,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
     valueJson: valueJson ?? this.valueJson,
     deviceId: deviceId ?? this.deviceId,
     wallTs: wallTs ?? this.wallTs,
+    baseSeq: baseSeq.present ? baseSeq.value : this.baseSeq,
   );
   OpRow copyWithCompanion(OpsCompanion data) {
     return OpRow(
@@ -410,6 +449,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
       valueJson: data.valueJson.present ? data.valueJson.value : this.valueJson,
       deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
       wallTs: data.wallTs.present ? data.wallTs.value : this.wallTs,
+      baseSeq: data.baseSeq.present ? data.baseSeq.value : this.baseSeq,
     );
   }
 
@@ -425,7 +465,8 @@ class OpRow extends DataClass implements Insertable<OpRow> {
           ..write('field: $field, ')
           ..write('valueJson: $valueJson, ')
           ..write('deviceId: $deviceId, ')
-          ..write('wallTs: $wallTs')
+          ..write('wallTs: $wallTs, ')
+          ..write('baseSeq: $baseSeq')
           ..write(')'))
         .toString();
   }
@@ -442,6 +483,7 @@ class OpRow extends DataClass implements Insertable<OpRow> {
     valueJson,
     deviceId,
     wallTs,
+    baseSeq,
   );
   @override
   bool operator ==(Object other) =>
@@ -456,7 +498,8 @@ class OpRow extends DataClass implements Insertable<OpRow> {
           other.field == this.field &&
           other.valueJson == this.valueJson &&
           other.deviceId == this.deviceId &&
-          other.wallTs == this.wallTs);
+          other.wallTs == this.wallTs &&
+          other.baseSeq == this.baseSeq);
 }
 
 class OpsCompanion extends UpdateCompanion<OpRow> {
@@ -470,6 +513,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
   final Value<String> valueJson;
   final Value<String> deviceId;
   final Value<int> wallTs;
+  final Value<int?> baseSeq;
   final Value<int> rowid;
   const OpsCompanion({
     this.opId = const Value.absent(),
@@ -482,6 +526,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
     this.valueJson = const Value.absent(),
     this.deviceId = const Value.absent(),
     this.wallTs = const Value.absent(),
+    this.baseSeq = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OpsCompanion.insert({
@@ -495,6 +540,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
     required String valueJson,
     required String deviceId,
     required int wallTs,
+    this.baseSeq = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : opId = Value(opId),
        localSeq = Value(localSeq),
@@ -516,6 +562,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
     Expression<String>? valueJson,
     Expression<String>? deviceId,
     Expression<int>? wallTs,
+    Expression<int>? baseSeq,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -529,6 +576,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
       if (valueJson != null) 'value_json': valueJson,
       if (deviceId != null) 'device_id': deviceId,
       if (wallTs != null) 'wall_ts': wallTs,
+      if (baseSeq != null) 'base_seq': baseSeq,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -544,6 +592,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
     Value<String>? valueJson,
     Value<String>? deviceId,
     Value<int>? wallTs,
+    Value<int?>? baseSeq,
     Value<int>? rowid,
   }) {
     return OpsCompanion(
@@ -557,6 +606,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
       valueJson: valueJson ?? this.valueJson,
       deviceId: deviceId ?? this.deviceId,
       wallTs: wallTs ?? this.wallTs,
+      baseSeq: baseSeq ?? this.baseSeq,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -594,6 +644,9 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
     if (wallTs.present) {
       map['wall_ts'] = Variable<int>(wallTs.value);
     }
+    if (baseSeq.present) {
+      map['base_seq'] = Variable<int>(baseSeq.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -613,6 +666,7 @@ class OpsCompanion extends UpdateCompanion<OpRow> {
           ..write('valueJson: $valueJson, ')
           ..write('deviceId: $deviceId, ')
           ..write('wallTs: $wallTs, ')
+          ..write('baseSeq: $baseSeq, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4341,6 +4395,323 @@ class FileCachesCompanion extends UpdateCompanion<FileCacheRow> {
   }
 }
 
+class $ConflictsTable extends Conflicts
+    with TableInfo<$ConflictsTable, ConflictRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ConflictsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fieldMeta = const VerificationMeta('field');
+  @override
+  late final GeneratedColumn<String> field = GeneratedColumn<String>(
+    'field',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _detectedAtMeta = const VerificationMeta(
+    'detectedAt',
+  );
+  @override
+  late final GeneratedColumn<int> detectedAt = GeneratedColumn<int>(
+    'detected_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _boardIdMeta = const VerificationMeta(
+    'boardId',
+  );
+  @override
+  late final GeneratedColumn<String> boardId = GeneratedColumn<String>(
+    'board_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [entityId, field, detectedAt, boardId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'conflicts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ConflictRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('field')) {
+      context.handle(
+        _fieldMeta,
+        field.isAcceptableOrUnknown(data['field']!, _fieldMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldMeta);
+    }
+    if (data.containsKey('detected_at')) {
+      context.handle(
+        _detectedAtMeta,
+        detectedAt.isAcceptableOrUnknown(data['detected_at']!, _detectedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_detectedAtMeta);
+    }
+    if (data.containsKey('board_id')) {
+      context.handle(
+        _boardIdMeta,
+        boardId.isAcceptableOrUnknown(data['board_id']!, _boardIdMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {entityId, field};
+  @override
+  ConflictRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ConflictRow(
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      field: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}field'],
+      )!,
+      detectedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}detected_at'],
+      )!,
+      boardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}board_id'],
+      )!,
+    );
+  }
+
+  @override
+  $ConflictsTable createAlias(String alias) {
+    return $ConflictsTable(attachedDatabase, alias);
+  }
+}
+
+class ConflictRow extends DataClass implements Insertable<ConflictRow> {
+  final String entityId;
+  final String field;
+
+  /// 发现的时间，用于显示。
+  final int detectedAt;
+
+  /// 所属看板，方便按板查。
+  final String boardId;
+  const ConflictRow({
+    required this.entityId,
+    required this.field,
+    required this.detectedAt,
+    required this.boardId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['entity_id'] = Variable<String>(entityId);
+    map['field'] = Variable<String>(field);
+    map['detected_at'] = Variable<int>(detectedAt);
+    map['board_id'] = Variable<String>(boardId);
+    return map;
+  }
+
+  ConflictsCompanion toCompanion(bool nullToAbsent) {
+    return ConflictsCompanion(
+      entityId: Value(entityId),
+      field: Value(field),
+      detectedAt: Value(detectedAt),
+      boardId: Value(boardId),
+    );
+  }
+
+  factory ConflictRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ConflictRow(
+      entityId: serializer.fromJson<String>(json['entityId']),
+      field: serializer.fromJson<String>(json['field']),
+      detectedAt: serializer.fromJson<int>(json['detectedAt']),
+      boardId: serializer.fromJson<String>(json['boardId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'entityId': serializer.toJson<String>(entityId),
+      'field': serializer.toJson<String>(field),
+      'detectedAt': serializer.toJson<int>(detectedAt),
+      'boardId': serializer.toJson<String>(boardId),
+    };
+  }
+
+  ConflictRow copyWith({
+    String? entityId,
+    String? field,
+    int? detectedAt,
+    String? boardId,
+  }) => ConflictRow(
+    entityId: entityId ?? this.entityId,
+    field: field ?? this.field,
+    detectedAt: detectedAt ?? this.detectedAt,
+    boardId: boardId ?? this.boardId,
+  );
+  ConflictRow copyWithCompanion(ConflictsCompanion data) {
+    return ConflictRow(
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      field: data.field.present ? data.field.value : this.field,
+      detectedAt: data.detectedAt.present
+          ? data.detectedAt.value
+          : this.detectedAt,
+      boardId: data.boardId.present ? data.boardId.value : this.boardId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ConflictRow(')
+          ..write('entityId: $entityId, ')
+          ..write('field: $field, ')
+          ..write('detectedAt: $detectedAt, ')
+          ..write('boardId: $boardId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(entityId, field, detectedAt, boardId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ConflictRow &&
+          other.entityId == this.entityId &&
+          other.field == this.field &&
+          other.detectedAt == this.detectedAt &&
+          other.boardId == this.boardId);
+}
+
+class ConflictsCompanion extends UpdateCompanion<ConflictRow> {
+  final Value<String> entityId;
+  final Value<String> field;
+  final Value<int> detectedAt;
+  final Value<String> boardId;
+  final Value<int> rowid;
+  const ConflictsCompanion({
+    this.entityId = const Value.absent(),
+    this.field = const Value.absent(),
+    this.detectedAt = const Value.absent(),
+    this.boardId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ConflictsCompanion.insert({
+    required String entityId,
+    required String field,
+    required int detectedAt,
+    this.boardId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : entityId = Value(entityId),
+       field = Value(field),
+       detectedAt = Value(detectedAt);
+  static Insertable<ConflictRow> custom({
+    Expression<String>? entityId,
+    Expression<String>? field,
+    Expression<int>? detectedAt,
+    Expression<String>? boardId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (entityId != null) 'entity_id': entityId,
+      if (field != null) 'field': field,
+      if (detectedAt != null) 'detected_at': detectedAt,
+      if (boardId != null) 'board_id': boardId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ConflictsCompanion copyWith({
+    Value<String>? entityId,
+    Value<String>? field,
+    Value<int>? detectedAt,
+    Value<String>? boardId,
+    Value<int>? rowid,
+  }) {
+    return ConflictsCompanion(
+      entityId: entityId ?? this.entityId,
+      field: field ?? this.field,
+      detectedAt: detectedAt ?? this.detectedAt,
+      boardId: boardId ?? this.boardId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (field.present) {
+      map['field'] = Variable<String>(field.value);
+    }
+    if (detectedAt.present) {
+      map['detected_at'] = Variable<int>(detectedAt.value);
+    }
+    if (boardId.present) {
+      map['board_id'] = Variable<String>(boardId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ConflictsCompanion(')
+          ..write('entityId: $entityId, ')
+          ..write('field: $field, ')
+          ..write('detectedAt: $detectedAt, ')
+          ..write('boardId: $boardId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4354,6 +4725,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CommentsTable comments = $CommentsTable(this);
   late final $SettingsTable settings = $SettingsTable(this);
   late final $FileCachesTable fileCaches = $FileCachesTable(this);
+  late final $ConflictsTable conflicts = $ConflictsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4369,6 +4741,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     comments,
     settings,
     fileCaches,
+    conflicts,
   ];
 }
 
@@ -4384,6 +4757,7 @@ typedef $$OpsTableCreateCompanionBuilder =
       required String valueJson,
       required String deviceId,
       required int wallTs,
+      Value<int?> baseSeq,
       Value<int> rowid,
     });
 typedef $$OpsTableUpdateCompanionBuilder =
@@ -4398,6 +4772,7 @@ typedef $$OpsTableUpdateCompanionBuilder =
       Value<String> valueJson,
       Value<String> deviceId,
       Value<int> wallTs,
+      Value<int?> baseSeq,
       Value<int> rowid,
     });
 
@@ -4456,6 +4831,11 @@ class $$OpsTableFilterComposer extends Composer<_$AppDatabase, $OpsTable> {
 
   ColumnFilters<int> get wallTs => $composableBuilder(
     column: $table.wallTs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get baseSeq => $composableBuilder(
+    column: $table.baseSeq,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4517,6 +4897,11 @@ class $$OpsTableOrderingComposer extends Composer<_$AppDatabase, $OpsTable> {
     column: $table.wallTs,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get baseSeq => $composableBuilder(
+    column: $table.baseSeq,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OpsTableAnnotationComposer extends Composer<_$AppDatabase, $OpsTable> {
@@ -4556,6 +4941,9 @@ class $$OpsTableAnnotationComposer extends Composer<_$AppDatabase, $OpsTable> {
 
   GeneratedColumn<int> get wallTs =>
       $composableBuilder(column: $table.wallTs, builder: (column) => column);
+
+  GeneratedColumn<int> get baseSeq =>
+      $composableBuilder(column: $table.baseSeq, builder: (column) => column);
 }
 
 class $$OpsTableTableManager
@@ -4596,6 +4984,7 @@ class $$OpsTableTableManager
                 Value<String> valueJson = const Value.absent(),
                 Value<String> deviceId = const Value.absent(),
                 Value<int> wallTs = const Value.absent(),
+                Value<int?> baseSeq = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OpsCompanion(
                 opId: opId,
@@ -4608,6 +4997,7 @@ class $$OpsTableTableManager
                 valueJson: valueJson,
                 deviceId: deviceId,
                 wallTs: wallTs,
+                baseSeq: baseSeq,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4622,6 +5012,7 @@ class $$OpsTableTableManager
                 required String valueJson,
                 required String deviceId,
                 required int wallTs,
+                Value<int?> baseSeq = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OpsCompanion.insert(
                 opId: opId,
@@ -4634,6 +5025,7 @@ class $$OpsTableTableManager
                 valueJson: valueJson,
                 deviceId: deviceId,
                 wallTs: wallTs,
+                baseSeq: baseSeq,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6633,6 +7025,189 @@ typedef $$FileCachesTableProcessedTableManager =
       FileCacheRow,
       PrefetchHooks Function()
     >;
+typedef $$ConflictsTableCreateCompanionBuilder =
+    ConflictsCompanion Function({
+      required String entityId,
+      required String field,
+      required int detectedAt,
+      Value<String> boardId,
+      Value<int> rowid,
+    });
+typedef $$ConflictsTableUpdateCompanionBuilder =
+    ConflictsCompanion Function({
+      Value<String> entityId,
+      Value<String> field,
+      Value<int> detectedAt,
+      Value<String> boardId,
+      Value<int> rowid,
+    });
+
+class $$ConflictsTableFilterComposer
+    extends Composer<_$AppDatabase, $ConflictsTable> {
+  $$ConflictsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get boardId => $composableBuilder(
+    column: $table.boardId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ConflictsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ConflictsTable> {
+  $$ConflictsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get boardId => $composableBuilder(
+    column: $table.boardId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ConflictsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ConflictsTable> {
+  $$ConflictsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get field =>
+      $composableBuilder(column: $table.field, builder: (column) => column);
+
+  GeneratedColumn<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get boardId =>
+      $composableBuilder(column: $table.boardId, builder: (column) => column);
+}
+
+class $$ConflictsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ConflictsTable,
+          ConflictRow,
+          $$ConflictsTableFilterComposer,
+          $$ConflictsTableOrderingComposer,
+          $$ConflictsTableAnnotationComposer,
+          $$ConflictsTableCreateCompanionBuilder,
+          $$ConflictsTableUpdateCompanionBuilder,
+          (
+            ConflictRow,
+            BaseReferences<_$AppDatabase, $ConflictsTable, ConflictRow>,
+          ),
+          ConflictRow,
+          PrefetchHooks Function()
+        > {
+  $$ConflictsTableTableManager(_$AppDatabase db, $ConflictsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ConflictsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ConflictsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ConflictsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> entityId = const Value.absent(),
+                Value<String> field = const Value.absent(),
+                Value<int> detectedAt = const Value.absent(),
+                Value<String> boardId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ConflictsCompanion(
+                entityId: entityId,
+                field: field,
+                detectedAt: detectedAt,
+                boardId: boardId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String entityId,
+                required String field,
+                required int detectedAt,
+                Value<String> boardId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ConflictsCompanion.insert(
+                entityId: entityId,
+                field: field,
+                detectedAt: detectedAt,
+                boardId: boardId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ConflictsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ConflictsTable,
+      ConflictRow,
+      $$ConflictsTableFilterComposer,
+      $$ConflictsTableOrderingComposer,
+      $$ConflictsTableAnnotationComposer,
+      $$ConflictsTableCreateCompanionBuilder,
+      $$ConflictsTableUpdateCompanionBuilder,
+      (
+        ConflictRow,
+        BaseReferences<_$AppDatabase, $ConflictsTable, ConflictRow>,
+      ),
+      ConflictRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6655,4 +7230,6 @@ class $AppDatabaseManager {
       $$SettingsTableTableManager(_db, _db.settings);
   $$FileCachesTableTableManager get fileCaches =>
       $$FileCachesTableTableManager(_db, _db.fileCaches);
+  $$ConflictsTableTableManager get conflicts =>
+      $$ConflictsTableTableManager(_db, _db.conflicts);
 }
