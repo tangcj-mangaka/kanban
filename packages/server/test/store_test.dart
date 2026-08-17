@@ -220,4 +220,45 @@ void main() {
       expect(codes.length, greaterThan(90), reason: '随机性太差');
     });
   });
+
+  group('base_seq 原样透传', () {
+    test('存进去再读出来不丢', () async {
+      // 服务端不理解这个字段的含义，但必须原样存下来再广播——不存的话
+      // 客户端收到的是 null，并发检测永远判不出来，而且不报任何错。
+      final store = Store.memory();
+      store.append([
+        Op(
+          opId: 'o1',
+          boardId: 'b',
+          entity: Entity.card,
+          entityId: 'c',
+          field: CardF.title,
+          value: '标题',
+          deviceId: 'd1',
+          wallTs: 1,
+          baseSeq: 42,
+        ),
+      ]);
+
+      final back = store.opsSince(0).single;
+      expect(back.baseSeq, 42);
+    });
+
+    test('没有 baseSeq 的 op 存成 null，不报错', () async {
+      final store = Store.memory();
+      store.append([
+        Op(
+          opId: 'o1',
+          boardId: 'b',
+          entity: Entity.card,
+          entityId: 'c',
+          field: CardF.title,
+          value: '标题',
+          deviceId: 'd1',
+          wallTs: 1,
+        ),
+      ]);
+      expect(store.opsSince(0).single.baseSeq, isNull);
+    });
+  });
 }

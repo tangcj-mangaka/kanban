@@ -667,6 +667,29 @@ class Repository {
   }
 
 
+  /// 这块看板上检测到过并发改动的卡片。
+  ///
+  /// 只是个提示用的集合——卡片当前内容照旧由 LWW 决定，这里不影响任何
+  /// 取值，只负责让界面能打个记号，提醒用户去看改动记录。
+  Stream<Set<String>> watchConflictedCards(String boardId) {
+    final q = db.select(db.conflicts)
+      ..where((c) => c.boardId.equals(boardId));
+    return q.watch().map((rows) => {for (final r in rows) r.entityId});
+  }
+
+  /// 这张卡片上哪些字段出过并发。
+  Stream<Set<String>> watchCardConflicts(String cardId) {
+    final q = db.select(db.conflicts)
+      ..where((c) => c.entityId.equals(cardId));
+    return q.watch().map((rows) => {for (final r in rows) r.field});
+  }
+
+  /// 清掉一张卡片上的并发记号（用户看过了）。
+  ///
+  /// 只清本机的——冲突记录本来就是本机数据，每台设备各自发现、各自清。
+  Future<void> clearCardConflicts(String cardId) =>
+      (db.delete(db.conflicts)..where((c) => c.entityId.equals(cardId))).go();
+
   /// 这张卡片的全部改动记录，最近的在前。
   ///
   /// **数据本来就存着**——底层是只增不删的操作日志，每条都记了哪台设备、

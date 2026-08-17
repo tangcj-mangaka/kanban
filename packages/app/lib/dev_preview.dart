@@ -170,10 +170,18 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
           showSyncSettings(context);
         });
       } else if (_autoOpen == 'history' && cards != null && cards.isNotEmpty) {
+        // 优先挑有并发冲突的那张——验证的就是冲突提示，挑一张没冲突的
+        // 卡片等于什么都没验到。
+        final conflicted =
+            ref.watch(conflictedCardsProvider(boardId)).value ?? const {};
+        final target = cards.firstWhere(
+          (c) => conflicted.contains(c.id),
+          orElse: () => cards.first,
+        );
         _opened = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          showCardHistory(context, boardId, cards.first.id);
+          showCardHistory(context, boardId, target.id);
         });
       } else if (cards != null && cards.isNotEmpty) {
         _opened = true;

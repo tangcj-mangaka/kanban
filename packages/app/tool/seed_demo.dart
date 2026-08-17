@@ -238,10 +238,10 @@ Future<void> _attachDemoImage(
   );
 }
 
-/// 给一张卡片编一段「三台设备各改过」的历史。
+/// 给一张卡片编一段「三台设备各改过、其中两台真并发」的历史。
 ///
-/// 直接灌 op 而不是调 Repository：要模拟别的设备的改动，就得自己指定
-/// deviceId 和 seq——那正是真实同步下服务端分配的东西。
+/// 直接灌 op 而不是调 Repository：要模拟别的设备，就得自己指定 deviceId、
+/// seq 和 baseSeq——那正是真实同步下由服务端和对方设备决定的东西。
 Future<void> _seedHistory(
   AppDatabase db,
   Repository repo,
@@ -250,15 +250,14 @@ Future<void> _seedHistory(
 ) async {
   final now = DateTime.now().millisecondsSinceEpoch;
 
-  await repo.setCardField(boardId, cardId, CardF.body, '笔记本上刚改的，还没同步出去');
-
   var seq = 9000;
   Future<void> remote(
     String device,
     String field,
-    Object? value,
-    int minutesAgo,
-  ) => db.applyOp(
+    Object? value, {
+    required int baseSeq,
+    required int minutesAgo,
+  }) => db.applyOp(
     Op(
       seq: seq++,
       opId: 'seed-$device-$field-$seq',
@@ -269,14 +268,37 @@ Future<void> _seedHistory(
       value: value,
       deviceId: device,
       wallTs: now - minutesAgo * 60 * 1000,
+      baseSeq: baseSeq,
     ),
   );
 
-  await remote('phone-1', CardF.body, '在手机上改的，出门路上想到的', 90);
-  await remote('desktop-1', CardF.title, '台式机改过的标题', 45);
-  await remote('desktop-1', CardF.body, '回家在台式机上重写的，同步过来的最新一版', 20);
+  // 手机和台式机都是在只知道到 8999 号时改的正文——双方都没看见对方，
+  // 这是真并发，会被检测出来。
+  await remote(
+    'phone-1',
+    CardF.body,
+    '在手机上改的，出门路上想到的',
+    baseSeq: 8999,
+    minutesAgo: 90,
+  );
+  await remote(
+    'desktop-1',
+    CardF.body,
+    '回家在台式机上重写的，同步过来的最新一版',
+    baseSeq: 8999,
+    minutesAgo: 20,
+  );
 
-  // 让设备名单有内容，好显示成人话而不是一串 ID。
+  // 这条标题是在看过上面两条之后改的（baseSeq 已经到 9001），
+  // 属于正常的先后修改，不该报冲突。
+  await remote(
+    'desktop-1',
+    CardF.title,
+    '台式机改过的标题',
+    baseSeq: 9001,
+    minutesAgo: 15,
+  );
+
   await db.setSetting(
     'sync.device_names',
     '{"phone-1":"手机","desktop-1":"台式机","local":"笔记本"}',

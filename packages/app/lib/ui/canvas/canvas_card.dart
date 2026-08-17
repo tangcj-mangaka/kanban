@@ -41,6 +41,9 @@ class CanvasCard extends StatelessWidget {
   /// 封面图（第一张图片附件）。没有图就是 null。
   final AttachmentRow? cover;
 
+  /// 这张卡片上检测到过多设备并发改动。
+  final bool conflicted;
+
   const CanvasCard({
     super.key,
     required this.card,
@@ -56,6 +59,7 @@ class CanvasCard extends StatelessWidget {
     required this.onMenuAction,
     required this.onToggleDone,
     required this.cover,
+    required this.conflicted,
   });
 
   @override
@@ -183,6 +187,19 @@ class CanvasCard extends StatelessWidget {
       children: [
         DoneBox(done: card.done, onTap: onToggleDone),
         const SizedBox(width: 7),
+        if (conflicted) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 1, right: 5),
+            child: Tooltip(
+              message: '这张卡片被多台设备同时改过，打开详情看改动记录',
+              child: Icon(
+                Icons.call_split,
+                size: 14,
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
         Expanded(
           child: Text(
             card.title.isEmpty ? '未命名' : card.title,

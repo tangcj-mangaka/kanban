@@ -792,4 +792,165 @@ void main() {
       );
     });
   });
+  group('并发检测', () {
+    /// 造一条远端 op。
+    Op remote({
+      required String cardId,
+      required int seq,
+      required int baseSeq,
+      required String device,
+      required Object? value,
+      String field = CardF.body,
+      String opId = '',
+    }) => Op(
+      seq: seq,
+      opId: opId.isEmpty ? 'op-$device-$seq' : opId,
+      boardId: 'b1',
+      entity: Entity.card,
+      entityId: cardId,
+      field: field,
+      value: value,
+      deviceId: device,
+      wallTs: 1000 + seq,
+      baseSeq: baseSeq,
+    );
+
+    test('双方都没见过对方 → 记为冲突', () async {
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: 'A'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '台式机', value: 'B'),
+      );
+
+      expect(await repo.watchCardConflicts('c1').first, {CardF.body});
+    });
+
+    test('正常的先后修改不算冲突', () async {
+      // 第二条产生时已经知道到 101，也就是看见了第一条。
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: 'A'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 101, device: '台式机', value: 'B'),
+      );
+
+      expect(await repo.watchCardConflicts('c1').first, isEmpty);
+    });
+
+    test('本地离线改动被 ACK 时才浮现出冲突', () async {
+      // 这是用户那个场景：笔记本离线改了，手机的改动先上了服务器。
+      // 本地 op 产生时还没有序号，判不了；ACK 回来才判得出。
+      await db.setSetting('sync.last_seq', '100');
+
+      await repo.setCardField('b1', 'c1', CardF.body, '笔记本上改的');
+      expect(
+        await repo.watchCardConflicts('c1').first,
+        isEmpty,
+        reason: '还没同步，无从判断',
+      );
+
+      // 手机那条先到，序号 101，同样基于 100。
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: '手机上改的'),
+      );
+
+      final localOp = await (db.select(db.ops)
+            ..where((o) => o.field.equals(CardF.body))
+            ..where((o) => o.deviceId.equals('local')))
+          .getSingle();
+      await db.ackOps({localOp.opId: 102});
+
+      expect(
+        await repo.watchCardConflicts('c1').first,
+        {CardF.body},
+        reason: 'ACK 之后两条都有号了，应当判出并发',
+      );
+    });
+
+    test('缺 baseSeq 的旧 op 不报冲突', () async {
+      // 宁可漏报也不错报。
+      await db.applyOp(
+        Op(
+          seq: 101,
+          opId: 'old-1',
+          boardId: 'b1',
+          entity: Entity.card,
+          entityId: 'c1',
+          field: CardF.body,
+          value: 'A',
+          deviceId: '旧版设备',
+          wallTs: 1,
+        ),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '手机', value: 'B'),
+      );
+
+      expect(await repo.watchCardConflicts('c1').first, isEmpty);
+    });
+
+    test('不同字段各自记账', () async {
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: 'A'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '台式机', value: 'B'),
+      );
+      await db.applyOp(
+        remote(
+          cardId: 'c1',
+          seq: 103,
+          baseSeq: 102,
+          device: '手机',
+          field: CardF.title,
+          value: '标题',
+        ),
+      );
+
+      expect(
+        await repo.watchCardConflicts('c1').first,
+        {CardF.body},
+        reason: '标题那条是看过前面才改的，不算冲突',
+      );
+    });
+
+    test('按看板查得到有冲突的卡片', () async {
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: 'A'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '台式机', value: 'B'),
+      );
+
+      expect(await repo.watchConflictedCards('b1').first, {'c1'});
+      expect(await repo.watchConflictedCards('别的板').first, isEmpty);
+    });
+
+    test('清掉之后不再提示', () async {
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: 'A'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '台式机', value: 'B'),
+      );
+
+      await repo.clearCardConflicts('c1');
+      expect(await repo.watchCardConflicts('c1').first, isEmpty);
+    });
+
+    test('冲突不影响谁赢——内容仍由 LWW 决定', () async {
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 101, baseSeq: 100, device: '手机', value: '手机的'),
+      );
+      await db.applyOp(
+        remote(cardId: 'c1', seq: 102, baseSeq: 100, device: '台式机', value: '台式机的'),
+      );
+
+      final card = await (db.select(
+        db.cards,
+      )..where((c) => c.id.equals('c1'))).getSingle();
+      expect(card.body, '台式机的', reason: '序号大的赢，检测不改变这一点');
+    });
+  });
 }

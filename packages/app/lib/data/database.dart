@@ -262,8 +262,16 @@ class AppDatabase extends _$AppDatabase {
           valueJson: jsonEncode(op.value),
           deviceId: op.deviceId,
           wallTs: op.wallTs,
+          baseSeq: Value(op.baseSeq),
         ),
       );
+
+      // 并发检测：这条 op 和同一字段上已有的哪条是「双方都没见过对方」的？
+      //
+      // 放在这里而不是等 ACK：远端 op 到达的这一刻就能算，而且只需要
+      // 算一次。检测本身不影响谁赢——赢家仍然由 LWW 定，这里只是记一笔
+      // 「这个字段上出过并发」，好让界面提示用户去看改动记录。
+      await _detectConflict(op);
 
       final current = await (select(fieldSeqs)
             ..where((f) => f.entityId.equals(op.entityId) & f.field.equals(op.field)))
@@ -299,6 +307,47 @@ class AppDatabase extends _$AppDatabase {
 
       return true;
     });
+  }
+
+  /// 记下这条 op 和同字段已有 op 之间的并发。
+  ///
+  /// 只在**两边都已经有服务端序号**时才判得出来，所以本地刚产生的 op
+  /// （seq 为 null）这一步什么都不做——等它被 ACK、或者等别人的 op 到达
+  /// 时再算。
+  Future<void> _detectConflict(Op incoming) async {
+    if (incoming.seq == null || incoming.baseSeq == null) return;
+
+    final siblings =
+        await (select(ops)
+              ..where(
+                (o) =>
+                    o.entity.equals(incoming.entity) &
+                    o.entityId.equals(incoming.entityId) &
+                    o.field.equals(incoming.field),
+              ))
+            .get();
+
+    for (final other in siblings) {
+      if (other.opId == incoming.opId) continue;
+      if (!areConcurrent(
+        aSeq: incoming.seq,
+        aBaseSeq: incoming.baseSeq,
+        bSeq: other.seq,
+        bBaseSeq: other.baseSeq,
+      )) {
+        continue;
+      }
+
+      await into(conflicts).insertOnConflictUpdate(
+        ConflictsCompanion.insert(
+          entityId: incoming.entityId,
+          field: incoming.field,
+          detectedAt: DateTime.now().millisecondsSinceEpoch,
+          boardId: Value(incoming.boardId),
+        ),
+      );
+      return;
+    }
   }
 
   /// 这个 op 的字段能不能落到物化表上。
@@ -351,6 +400,26 @@ class AppDatabase extends _$AppDatabase {
           OpsCompanion(seq: Value(entry.value)),
         );
         affected.add((row.entityId, row.field));
+
+        // 现在这条本地 op 才有了序号，并发才判得出来。
+        //
+        // 产生它的时候 seq 还是 null，_detectConflict 什么都没做；
+        // 真正的并发往往正是在这一刻浮现——本地离线改的那条刚拿到号，
+        // 而别人在此之前推上去的改动序号更小，双方都没见过对方。
+        await _detectConflict(
+          Op(
+            seq: entry.value,
+            opId: row.opId,
+            boardId: row.boardId,
+            entity: row.entity,
+            entityId: row.entityId,
+            field: row.field,
+            value: jsonDecode(row.valueJson),
+            deviceId: row.deviceId,
+            wallTs: row.wallTs,
+            baseSeq: row.baseSeq,
+          ),
+        );
       }
 
       for (final (entityId, field) in affected) {
@@ -469,9 +538,14 @@ class AppDatabase extends _$AppDatabase {
       throw ArgumentError('未知字段：$entity.$field');
     }
 
+    // 记下产生这条 op 时本机已知的最大服务端序号。判并发要靠它——
+    // 见 shared 里的 areConcurrent。
+    final knownSeq = await getIntSetting('sync.last_seq');
+
     await applyOp(
       Op(
         opId: _uuid.v4(),
+        baseSeq: knownSeq,
         boardId: boardId,
         entity: entity,
         entityId: entityId,

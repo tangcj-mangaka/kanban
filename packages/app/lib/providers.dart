@@ -162,6 +162,18 @@ final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(
   (ref, boardId) => ref.watch(repositoryProvider).watchCommentCounts(boardId),
 );
 
+/// 这块看板上检测到过并发改动的卡片。
+final conflictedCardsProvider = StreamProvider.family<Set<String>, String>(
+  (ref, boardId) =>
+      ref.watch(repositoryProvider).watchConflictedCards(boardId),
+);
+
+/// 某张卡片上出过并发的字段。
+final cardConflictsProvider =
+    StreamProvider.autoDispose.family<Set<String>, String>(
+      (ref, cardId) => ref.watch(repositoryProvider).watchCardConflicts(cardId),
+    );
+
 /// 某张卡片的改动记录。
 final cardChangesProvider =
     StreamProvider.autoDispose.family<List<CardChange>, String>(

@@ -39,6 +39,12 @@ class Store {
 
   factory Store.memory() => Store(sqlite3.openInMemory());
 
+  /// 这张表有没有这一列。用来给已存在的库补列。
+  bool _hasColumn(String table, String column) {
+    final rows = _db.select('PRAGMA table_info($table)');
+    return rows.any((r) => r['name'] == column);
+  }
+
   void _migrate() {
     _db.execute('PRAGMA journal_mode = WAL');
     _db.execute('''
@@ -54,6 +60,19 @@ class Store {
         wall_ts   INTEGER NOT NULL
       )
     ''');
+    // base_seq 是后加的：产生 op 时那台设备已知的最大序号，客户端用它
+    // 判断两条改动是不是真并发。
+    //
+    // **服务端必须原样存下来再广播出去**。它不理解这个字段的含义，但如果
+    // 存都不存，客户端收到的就是 null，并发检测会永远判不出来——而且不报
+    // 任何错，功能悄悄失效。
+    //
+    // `CREATE TABLE IF NOT EXISTS` 对已存在的库不会加列，所以这里补一次
+    // ALTER。旧库里已有的 op 这一列是 null，那些 op 判不了并发，可以接受。
+    if (!_hasColumn('ops', 'base_seq')) {
+      _db.execute('ALTER TABLE ops ADD COLUMN base_seq INTEGER');
+    }
+
     _db.execute('CREATE INDEX IF NOT EXISTS idx_ops_field ON ops(entity_id, field, seq)');
     _db.execute('CREATE INDEX IF NOT EXISTS idx_ops_board ON ops(board_id, seq)');
 
@@ -117,8 +136,9 @@ class Store {
     try {
       final insert = _db.prepare('''
         INSERT OR IGNORE INTO ops
-          (op_id, board_id, entity, entity_id, field, value_json, device_id, wall_ts)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (op_id, board_id, entity, entity_id, field, value_json, device_id, wall_ts,
+           base_seq)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''');
       final lookup = _db.prepare('SELECT seq FROM ops WHERE op_id = ?');
 
@@ -132,6 +152,7 @@ class Store {
           jsonEncode(op.value),
           op.deviceId,
           op.wallTs,
+          op.baseSeq,
         ]);
         final row = lookup.select([op.opId]);
         if (row.isNotEmpty) assigned[op.opId] = row.first['seq'] as int;
@@ -178,6 +199,7 @@ class Store {
     value: jsonDecode(r['value_json'] as String),
     deviceId: r['device_id'] as String,
     wallTs: r['wall_ts'] as int,
+    baseSeq: r['base_seq'] as int?,
   );
 
   int get opCount =>

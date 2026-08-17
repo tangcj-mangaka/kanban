@@ -179,6 +179,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final attachmentCounts =
         ref.watch(attachmentCountsProvider(widget.boardId)).value ?? const {};
     final covers = ref.watch(cardCoversProvider(widget.boardId)).value ?? const {};
+    final conflicted =
+        ref.watch(conflictedCardsProvider(widget.boardId)).value ??
+        const <String>{};
     final tagById = {for (final t in tags) t.id: t};
 
     return Column(
@@ -231,6 +234,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                         commentCounts[card.id] ?? 0,
                         attachmentCounts[card.id] ?? 0,
                         covers[card.id],
+                        conflicted.contains(card.id),
                       ),
                     if (cards.isEmpty) const _CanvasHint(),
                   ],
@@ -393,6 +397,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     int commentCount,
     int attachmentCount,
     AttachmentRow? cover,
+    bool conflicted,
   ) {
     final world = card.id == _draggingId ? _dragWorld : Offset(card.x, card.y);
     final width = card.id == _resizingId ? _resizeWidth : card.width;
@@ -450,6 +455,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                     .read(repositoryProvider)
                     .toggleCardDone(widget.boardId, card.id, !card.done),
                 cover: cover,
+                conflicted: conflicted,
                 onMenuAction: (action) => _onCardMenu(card, action),
                 ),
               ),
