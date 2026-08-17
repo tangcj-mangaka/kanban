@@ -115,7 +115,9 @@ void main() {
         );
       }
 
-      final count = 2 + rand.nextInt(pool.length - 1);
+      // 每块板尽量多灌几张，好让「整理」有东西可换行——卡片数少于列数时
+      // 谁也不会排到谁下面，等于验不到高度算得对不对。
+      final count = pool.length;
       for (var i = 0; i < count; i++) {
         final (title, body) = pool[i % pool.length];
         final cardId = await repo.createCard(

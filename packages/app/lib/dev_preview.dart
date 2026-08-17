@@ -102,6 +102,12 @@ const _boardSearch = String.fromEnvironment('BOARD_SEARCH');
 /// `--dart-define=FOCUS=1` 时进来就定位到第一个命中。
 const _focusFirst = bool.fromEnvironment('FOCUS');
 
+/// `--dart-define=TIDY=true` 时进来自动整理一次。
+///
+/// 整理用的是画布量到的真实卡片高度，那份数据只存在于画布的 State 里，
+/// 从外面调不到——只能让它自己触发，否则验的就不是真实路径。
+const _autoTidy = bool.fromEnvironment('TIDY');
+
 /// `--dart-define=LIST=true` 时停在看板列表页而不是直接进第一块看板。
 const _showList = bool.fromEnvironment('LIST');
 
@@ -175,6 +181,7 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
       boardId: boardId,
       initialSearch: _boardSearch.isEmpty ? null : _boardSearch,
       focusFirstMatch: _focusFirst,
+      autoTidy: _autoTidy,
       // 不指定时传 null，让 BoardPage 按屏幕宽度自己定
       // （手机默认分组视图）。写死 canvas 会把那个默认绕过去。
       initialView: switch (_initialView) {

@@ -51,6 +51,9 @@ class BoardPage extends ConsumerStatefulWidget {
   /// 给截图验证用；正常打开是 null。
   final String? initialSearch;
 
+  /// 进来后自动整理一次。给截图验证用。
+  final bool autoTidy;
+
   /// 配合 [initialSearch]：进来就定位到第一个命中。
   ///
   /// 也是给截图验证用的——「定位」这个动作要点按钮才会发生。
@@ -63,6 +66,7 @@ class BoardPage extends ConsumerStatefulWidget {
     this.openCardId,
     this.initialSearch,
     this.focusFirstMatch = false,
+    this.autoTidy = false,
   });
 
   @override
@@ -291,6 +295,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     BoardView.canvas => CanvasView(
                       boardId: widget.boardId,
                       search: _search,
+                      autoTidy: widget.autoTidy,
                     ),
                     BoardView.grouped => GroupedView(
                       boardId: widget.boardId,

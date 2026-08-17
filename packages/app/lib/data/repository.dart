@@ -358,7 +358,25 @@ class Repository {
   ///
   /// 保持原有的相对顺序（先按 y 再按 x），这样整理完还认得出哪张是哪张。
   /// 整批放进一个事务——几十张卡片各改两个字段，不能拆成几十次提交。
-  Future<void> tidyCards(String boardId, {int columns = 4}) async {
+  /// 把散乱的卡片排成整齐的几列。
+  ///
+  /// [heights] 是每张卡片**实际渲染出来的高度**，由画布量好传进来；
+  /// 量不到的卡片退回 [fallbackHeight]。
+  ///
+  /// 为什么要外面传高度：卡片高度是内容撑出来的（标题几行、正文多长、
+  /// 有没有封面图），只有布局跑完才知道，数据层量不到。原来这里写死
+  /// 150，加了封面图之后一张带图的卡片轻松超过 300，整理完直接盖住
+  /// 下一行——这正是这个方法要修的问题。
+  ///
+  /// 排布用的是「哪列短就往哪列放」而不是严格的一行一行填。高度参差很大
+  /// 时，按行填会因为要迁就本行最高的那张而留下大片空白；而「整理」这个
+  /// 动作的意义就是把东西码整齐，紧凑比保持严格的左右顺序更重要。
+  Future<void> tidyCards(
+    String boardId, {
+    int columns = 4,
+    Map<String, double> heights = const {},
+    double fallbackHeight = 150,
+  }) async {
     final cards = await (db.select(db.cards)
           ..where(
             (c) =>
@@ -376,28 +394,40 @@ class Repository {
 
     const gapX = 24.0;
     const gapY = 24.0;
-    const rowHeight = 150.0;
     final colWidth =
         sorted.map((c) => c.width).reduce((a, b) => a > b ? a : b) + gapX;
 
+    // 每列当前堆到哪个 y。
+    final columnBottom = List<double>.filled(columns, gapY);
+
     await db.transaction(() async {
-      for (var i = 0; i < sorted.length; i++) {
-        final x = (i % columns) * colWidth + gapX;
-        final y = (i ~/ columns) * (rowHeight + gapY) + gapY;
+      for (final card in sorted) {
+        // 挑最短的一列。并列时取最左边那个，结果才是确定的——
+        // 同样一批卡片整理两次必须得到同样的结果。
+        var target = 0;
+        for (var i = 1; i < columns; i++) {
+          if (columnBottom[i] < columnBottom[target]) target = i;
+        }
+
+        final x = target * colWidth + gapX;
+        final y = columnBottom[target];
+
         await db.emit(
           boardId: boardId,
           entity: Entity.card,
-          entityId: sorted[i].id,
+          entityId: card.id,
           field: CardF.x,
           value: x,
         );
         await db.emit(
           boardId: boardId,
           entity: Entity.card,
-          entityId: sorted[i].id,
+          entityId: card.id,
           field: CardF.y,
           value: y,
         );
+
+        columnBottom[target] = y + (heights[card.id] ?? fallbackHeight) + gapY;
       }
     });
   }

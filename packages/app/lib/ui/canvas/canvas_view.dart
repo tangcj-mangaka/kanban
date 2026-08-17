@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
@@ -31,10 +32,18 @@ class CanvasView extends ConsumerStatefulWidget {
   /// 把不匹配的抽走会让人失去方位感，回头还得重新找。
   final BoardSearch search;
 
+  /// 进来后自动执行一次「整理」。
+  ///
+  /// 给截图验证用；正常打开是 false。整理依赖画布量到的真实卡片高度，
+  /// 而那份数据只存在于这个 State 里，从外面调不到——所以只能在这里触发，
+  /// 否则验证的就不是真实路径。
+  final bool autoTidy;
+
   const CanvasView({
     super.key,
     required this.boardId,
     this.search = BoardSearch.none,
+    this.autoTidy = false,
   });
 
   @override
@@ -67,6 +76,53 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   final _titleFocus = FocusNode();
 
   final _viewportKey = GlobalKey();
+
+  /// 每张卡片渲染出来的实际高度，供「整理」用。
+  ///
+  /// **不放进 setState**：这个 map 只在按「整理」的那一刻读一次，
+  /// 每量到一次就重建整个画布纯属浪费——而且量高度本身发生在布局之后，
+  /// 在那里触发重建很容易变成每帧都重来一遍。
+  final _cardHeights = <String, double>{};
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.autoTidy) return;
+    // 等高度**稳定**下来再整理，不能只等「每张都量到了」。
+    //
+    // 带封面图的卡片先显示一个占位方块，图加载完才撑到真实高度。
+    // 在那之前整理，下面的卡片会按占位高度排，图一加载就被盖住。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      var stable = 0;
+      Map<String, double> last = {};
+      for (var i = 0; i < 60 && mounted; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final cards =
+            ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
+        final now = Map.of(_cardHeights);
+
+        final ready = cards.isNotEmpty && now.length >= cards.length;
+        stable = (ready && _sameHeights(now, last)) ? stable + 1 : 0;
+        last = now;
+
+        // 连续三次没变化才算稳了。
+        if (stable >= 3) {
+          await ref
+              .read(repositoryProvider)
+              .tidyCards(widget.boardId, heights: now);
+          return;
+        }
+      }
+    });
+  }
+
+  static bool _sameHeights(Map<String, double> a, Map<String, double> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
 
   @override
   void didUpdateWidget(CanvasView old) {
@@ -208,7 +264,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
             icon: Icons.grid_view_rounded,
             label: '整理',
             tooltip: '把散乱的卡片排成网格',
-            onTap: () => ref.read(repositoryProvider).tidyCards(widget.boardId),
+            onTap: () => ref
+                .read(repositoryProvider)
+                .tidyCards(widget.boardId, heights: Map.of(_cardHeights)),
           ),
           const SizedBox(width: 6),
           _ToolButton(
@@ -304,18 +362,19 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
         ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
     if (cards.isEmpty) return;
 
-    // 卡片高度是内容撑出来的，这里取个够用的估值——"适应全部"只要求
-    // 大致装得下，不需要像素级精确。
-    const estimatedHeight = 150.0;
+    // 用量到的真实高度；还没量到的（比如刚同步过来还没渲染）退回估值。
+    // 原来一律按 150 算，带封面图的卡片底部会被切在视野外。
+    double heightOf(CardRow c) => _cardHeights[c.id] ?? 150.0;
+
     var rect = Rect.fromLTWH(
       cards.first.x,
       cards.first.y,
       cards.first.width,
-      estimatedHeight,
+      heightOf(cards.first),
     );
     for (final c in cards.skip(1)) {
       rect = rect.expandToInclude(
-        Rect.fromLTWH(c.x, c.y, c.width, estimatedHeight),
+        Rect.fromLTWH(c.x, c.y, c.width, heightOf(c)),
       );
     }
 
@@ -366,7 +425,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
               onPanStart: (d) => _onCardDragStart(card, d),
               onPanUpdate: _onCardDragUpdate,
               onPanEnd: (_) => _onCardDragEnd(card),
-              child: CanvasCard(
+              child: _MeasureHeight(
+                onChange: (h) => _cardHeights[card.id] = h,
+                child: CanvasCard(
                 card: card.copyWith(width: width),
                 tags: tags,
                 commentCount: commentCount,
@@ -390,6 +451,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
                     .toggleCardDone(widget.boardId, card.id, !card.done),
                 cover: cover,
                 onMenuAction: (action) => _onCardMenu(card, action),
+                ),
               ),
             ),
             // 当前定位到的那张套一圈光环，好在一片命中里认出「就是这张」。
@@ -672,6 +734,43 @@ class _ZoomIndicator extends StatelessWidget {
 }
 
 /// 空画布上的引导。
+/// 量出子组件渲染后的高度，变化时回调。
+///
+/// 卡片高度是内容撑出来的——标题几行、正文多长、有没有封面图——只有布局
+/// 跑完才知道。「整理」需要真实高度才能排得不重叠，所以在这里量了记下来。
+///
+/// 量的是 [CanvasCard] 自己的尺寸，不受画布缩放影响：`Transform.scale`
+/// 只改绘制，不改子组件的布局尺寸，所以拿到的就是世界坐标下的高度。
+class _MeasureHeight extends SingleChildRenderObjectWidget {
+  final ValueChanged<double> onChange;
+
+  const _MeasureHeight({required this.onChange, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasureHeight(onChange);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMeasureHeight ro) =>
+      ro.onChange = onChange;
+}
+
+class _RenderMeasureHeight extends RenderProxyBox {
+  _RenderMeasureHeight(this.onChange);
+
+  ValueChanged<double> onChange;
+  double? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (_last == size.height) return;
+    _last = size.height;
+    // 布局过程中不能直接改别人的状态，排到这一帧画完再说。
+    WidgetsBinding.instance.addPostFrameCallback((_) => onChange(_last!));
+  }
+}
+
 /// 挂上来的时候淡入并轻微放大一下，之后就不再动。
 ///
 /// 新建的卡片「啪」地出现在画布上会让人一愣——尤其是同步过来的卡片，

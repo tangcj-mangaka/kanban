@@ -558,4 +558,93 @@ void main() {
       expect(covers[c]?.thumbHash, '缩略图哈希');
     });
   });
+  group('整理', () {
+    Future<List<CardRow>> cardsOf(String boardId) => (db.select(
+      db.cards,
+    )..where((c) => c.boardId.equals(boardId))).get();
+
+    test('按真实高度排，不会互相压住', () async {
+      // 这是 #2 的核心：原来行高写死 150，一张 400 高的带图卡片
+      // 会盖住下一行。
+      final b = await repo.createBoard(name: 'B');
+      final tall = await repo.createCard(boardId: b, x: 0, y: 0);
+      final short = await repo.createCard(boardId: b, x: 0, y: 500);
+
+      await repo.tidyCards(
+        b,
+        columns: 1, // 一列，强制它们上下排
+        heights: {tall: 400, short: 80},
+      );
+
+      final rows = {for (final c in await cardsOf(b)) c.id: c};
+      final gap = rows[short]!.y - rows[tall]!.y;
+      expect(
+        gap,
+        greaterThanOrEqualTo(400),
+        reason: '第二张的顶必须在第一张的底之下',
+      );
+    });
+
+    test('没给高度的卡片用兜底值', () async {
+      final b = await repo.createBoard(name: 'B');
+      await repo.createCard(boardId: b, x: 0, y: 0);
+      final second = await repo.createCard(boardId: b, x: 0, y: 100);
+
+      await repo.tidyCards(b, columns: 1, fallbackHeight: 200);
+
+      final rows = {for (final c in await cardsOf(b)) c.id: c};
+      expect(rows[second]!.y, greaterThanOrEqualTo(200));
+    });
+
+    test('往最短的那一列放', () async {
+      final b = await repo.createBoard(name: 'B');
+      final a1 = await repo.createCard(boardId: b, x: 0, y: 0);
+      final a2 = await repo.createCard(boardId: b, x: 0, y: 100);
+      final a3 = await repo.createCard(boardId: b, x: 0, y: 200);
+
+      // 第一张很高，第三张就该回到第二列下面，而不是接着第一列。
+      await repo.tidyCards(
+        b,
+        columns: 2,
+        heights: {a1: 500, a2: 50, a3: 50},
+      );
+
+      final rows = {for (final c in await cardsOf(b)) c.id: c};
+      expect(rows[a1]!.x, lessThan(rows[a2]!.x), reason: '前两张分在两列');
+      expect(rows[a3]!.x, rows[a2]!.x, reason: '第三张该跟着矮的那列');
+      expect(rows[a3]!.y, greaterThan(rows[a2]!.y));
+    });
+
+    test('同一批卡片整理两次结果一样', () async {
+      final b = await repo.createBoard(name: 'B');
+      for (var i = 0; i < 6; i++) {
+        await repo.createCard(boardId: b, x: i * 7.0, y: i * 13.0);
+      }
+
+      await repo.tidyCards(b);
+      final first = {for (final c in await cardsOf(b)) c.id: (c.x, c.y)};
+      await repo.tidyCards(b);
+      final second = {for (final c in await cardsOf(b)) c.id: (c.x, c.y)};
+
+      expect(second, first, reason: '并列取最左列，结果必须是确定的');
+    });
+
+    test('不动归档和已删的卡片', () async {
+      final b = await repo.createBoard(name: 'B');
+      final archived = await repo.createCard(boardId: b, x: 999, y: 999);
+      await repo.archiveCard(b, archived);
+      await repo.createCard(boardId: b, x: 0, y: 0);
+
+      await repo.tidyCards(b);
+
+      final rows = {for (final c in await cardsOf(b)) c.id: c};
+      expect(rows[archived]!.x, 999);
+      expect(rows[archived]!.y, 999);
+    });
+
+    test('空看板不出错', () async {
+      final b = await repo.createBoard(name: 'B');
+      await expectLater(repo.tidyCards(b), completes);
+    });
+  });
 }
