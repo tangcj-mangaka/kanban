@@ -157,6 +157,9 @@ void main() {
         // 每块板上勾掉一张，好在截图里看到完成态。
         if (i == 0) await repo.toggleCardDone(boardId, cardId, true);
 
+        // 第一张卡片编一段多设备改动历史，用来看改动记录长什么样。
+        if (i == 0) await _seedHistory(db, repo, boardId, cardId);
+
         // 每块板的第二张卡片配一张图，用来验证封面。
         if (i == 1) {
           await _attachDemoImage(db, repo, boardId, cardId, rand);
@@ -232,5 +235,50 @@ Future<void> _attachDemoImage(
     ((r + m) * 255).round(),
     ((g + m) * 255).round(),
     ((b + m) * 255).round(),
+  );
+}
+
+/// 给一张卡片编一段「三台设备各改过」的历史。
+///
+/// 直接灌 op 而不是调 Repository：要模拟别的设备的改动，就得自己指定
+/// deviceId 和 seq——那正是真实同步下服务端分配的东西。
+Future<void> _seedHistory(
+  AppDatabase db,
+  Repository repo,
+  String boardId,
+  String cardId,
+) async {
+  final now = DateTime.now().millisecondsSinceEpoch;
+
+  await repo.setCardField(boardId, cardId, CardF.body, '笔记本上刚改的，还没同步出去');
+
+  var seq = 9000;
+  Future<void> remote(
+    String device,
+    String field,
+    Object? value,
+    int minutesAgo,
+  ) => db.applyOp(
+    Op(
+      seq: seq++,
+      opId: 'seed-$device-$field-$seq',
+      boardId: boardId,
+      entity: Entity.card,
+      entityId: cardId,
+      field: field,
+      value: value,
+      deviceId: device,
+      wallTs: now - minutesAgo * 60 * 1000,
+    ),
+  );
+
+  await remote('phone-1', CardF.body, '在手机上改的，出门路上想到的', 90);
+  await remote('desktop-1', CardF.title, '台式机改过的标题', 45);
+  await remote('desktop-1', CardF.body, '回家在台式机上重写的，同步过来的最新一版', 20);
+
+  // 让设备名单有内容，好显示成人话而不是一串 ID。
+  await db.setSetting(
+    'sync.device_names',
+    '{"phone-1":"手机","desktop-1":"台式机","local":"笔记本"}',
   );
 }

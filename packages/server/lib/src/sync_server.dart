@@ -134,8 +134,15 @@ class SyncServer {
     final known = store.deviceById(hello.deviceId);
     String? issuedToken;
 
+    // 老设备改了名字的话要记下来，否则名单里永远是配对那天报的名字。
+    var renamed = false;
+
     if (known != null && hello.token == known.token) {
       // 老设备，令牌对得上。
+      if (known.name != hello.deviceName && hello.deviceName.isNotEmpty) {
+        store.renameDevice(hello.deviceId, hello.deviceName);
+        renamed = true;
+      }
     } else if (_pairCodeValid(hello.pairCode)) {
       issuedToken = store.pair(hello.deviceId, hello.deviceName).token;
       // 配对码是一次性的，用掉即焚。
@@ -172,6 +179,31 @@ class SyncServer {
     final ops = store.opsSince(hello.lastSeq);
     client.send(SyncOpsMessage(ops: ops, serverSeq: store.maxSeq));
     _log('${hello.deviceName} 上线，补齐 ${ops.length} 条，在线 $onlineCount');
+
+    // 设备名单只有服务端知道（每台设备只在 HELLO 里报自己的名字），
+    // 客户端要靠它把 op 日志里的设备 ID 翻译成人看得懂的名字。
+    //
+    // 刚上线的这台一定要发——它需要整份名单。
+    // 其余设备只在名单**真的变了**时才发（新配对，或者这台改了名）：
+    // 每次有人重连就给所有人广播一遍纯属噪音，而且会让「自己推送的
+    // 改动不该收到回音」这类断言变得难写。
+    final rosterChanged = issuedToken != null || renamed;
+    if (rosterChanged) {
+      _broadcastDevices();
+    } else {
+      client.send(_devicesMessage());
+    }
+  }
+
+  DevicesMessage _devicesMessage() =>
+      DevicesMessage({for (final d in store.devices) d.id: d.name});
+
+  /// 把「设备 ID → 名字」推给所有已认证的连接。
+  void _broadcastDevices() {
+    final msg = _devicesMessage();
+    for (final c in _clients) {
+      if (c.authed) c.send(msg);
+    }
   }
 
   void _onPush(ClientConnection client, PushMessage push) {

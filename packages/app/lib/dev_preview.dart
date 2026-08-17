@@ -19,6 +19,7 @@ import 'providers.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/board/board_page.dart';
 import 'ui/card/card_detail_dialog.dart';
+import 'ui/card/card_history_sheet.dart';
 import 'ui/sync/sync_settings_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -167,6 +168,12 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           showSyncSettings(context);
+        });
+      } else if (_autoOpen == 'history' && cards != null && cards.isNotEmpty) {
+        _opened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showCardHistory(context, boardId, cards.first.id);
         });
       } else if (cards != null && cards.isNotEmpty) {
         _opened = true;

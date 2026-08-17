@@ -647,4 +647,149 @@ void main() {
       await expectLater(repo.tidyCards(b), completes);
     });
   });
+  group('改动记录', () {
+    test('记下每一次改动，最近的在前', () async {
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0, title: '第一版');
+      await repo.setCardField(b, id, CardF.title, '第二版');
+      await repo.setCardField(b, id, CardF.title, '第三版');
+
+      final changes = await repo.watchCardChanges(id).first;
+      final titles = [
+        for (final c in changes)
+          if (c.field == CardF.title) c.value,
+      ];
+      expect(titles, ['第三版', '第二版', '第一版']);
+    });
+
+    test('标出哪一条是当前生效的', () async {
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0, title: '旧');
+      await repo.setCardField(b, id, CardF.title, '新');
+
+      final changes = await repo.watchCardChanges(id).first;
+      final current = changes.where((c) => c.current && c.field == CardF.title);
+      expect(current, hasLength(1));
+      expect(current.single.value, '新');
+    });
+
+    test('输掉的那份内容仍然查得到', () async {
+      // 这是整个功能存在的理由：字段级 LWW 只留一个赢家，输掉的内容
+      // 不会出现在卡片上，但它一直在日志里。
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0);
+
+      // 模拟另一台设备的改动后到、且序号更大，覆盖了本地这一条。
+      await repo.setCardField(b, id, CardF.body, '我在笔记本上写的');
+
+      // 先把本地那条 ACK 掉。**不 ACK 的话本地那条是赢的**——
+      // 未同步的本地改动在本机优先，这是设计如此（见 compareOpOrder）。
+      final localOp = await (db.select(db.ops)
+            ..where((o) => o.field.equals(CardF.body))
+            ..where((o) => o.deviceId.equals('local')))
+          .getSingle();
+      await db.ackOps({localOp.opId: 10});
+
+      await db.applyOp(
+        Op(
+          seq: 9999,
+          opId: 'remote-1',
+          boardId: b,
+          entity: Entity.card,
+          entityId: id,
+          field: CardF.body,
+          value: '台式机上写的，赢了',
+          deviceId: 'desktop',
+          wallTs: DateTime.now().millisecondsSinceEpoch + 1000,
+        ),
+      );
+
+      final card = await (db.select(
+        db.cards,
+      )..where((c) => c.id.equals(id))).getSingle();
+      expect(card.body, '台式机上写的，赢了');
+
+      final changes = await repo.watchCardChanges(id).first;
+      final bodies = [
+        for (final c in changes)
+          if (c.field == CardF.body) c.value,
+      ];
+      expect(
+        bodies,
+        containsAll(['我在笔记本上写的', '台式机上写的，赢了']),
+        reason: '被覆盖掉的那份必须还能查到',
+      );
+    });
+
+    test('带上是哪台设备改的', () async {
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0);
+      await db.applyOp(
+        Op(
+          seq: 5,
+          opId: 'r1',
+          boardId: b,
+          entity: Entity.card,
+          entityId: id,
+          field: CardF.title,
+          value: '手机改的',
+          deviceId: 'phone-abc',
+          wallTs: DateTime.now().millisecondsSinceEpoch + 500,
+        ),
+      );
+
+      final changes = await repo.watchCardChanges(id).first;
+      final fromPhone = changes.where((c) => c.deviceId == 'phone-abc');
+      expect(fromPhone, hasLength(1));
+      expect(fromPhone.single.value, '手机改的');
+    });
+
+    test('不记坐标层级这些噪音字段', () async {
+      // 拖一下卡片就产生 x、y 两条 op，记进去会把有意义的改动淹掉。
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0);
+      await repo.moveCard(b, id, 500, 600);
+      await repo.bringToFront(b, id);
+
+      final changes = await repo.watchCardChanges(id).first;
+      final fields = changes.map((c) => c.field).toSet();
+      expect(fields, isNot(contains(CardF.x)));
+      expect(fields, isNot(contains(CardF.y)));
+      expect(fields, isNot(contains(CardF.z)));
+    });
+
+    test('不同卡片的记录不串', () async {
+      final b = await repo.createBoard(name: 'B');
+      final a = await repo.createCard(boardId: b, x: 0, y: 0, title: 'A');
+      final other = await repo.createCard(boardId: b, x: 0, y: 0, title: 'B');
+      await repo.setCardField(b, other, CardF.title, 'B2');
+
+      final changes = await repo.watchCardChanges(a).first;
+      expect(
+        changes.every((c) => c.value != 'B2'),
+        isTrue,
+      );
+    });
+
+    test('恢复历史值会产生一条新改动，而不是抹掉历史', () async {
+      final b = await repo.createBoard(name: 'B');
+      final id = await repo.createCard(boardId: b, x: 0, y: 0, title: '原始');
+      await repo.setCardField(b, id, CardF.title, '改坏了');
+
+      await repo.restoreCardValue(b, id, CardF.title, '原始');
+
+      final card = await (db.select(
+        db.cards,
+      )..where((c) => c.id.equals(id))).getSingle();
+      expect(card.title, '原始');
+
+      final changes = await repo.watchCardChanges(id).first;
+      final titleChanges = changes.where((c) => c.field == CardF.title);
+      expect(
+        titleChanges,
+        hasLength(3),
+        reason: '恢复本身也是一次改动：原始 → 改坏了 → 原始',
+      );
+    });
+  });
 }

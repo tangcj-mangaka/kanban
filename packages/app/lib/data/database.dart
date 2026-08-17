@@ -95,6 +95,12 @@ class AppDatabase extends _$AppDatabase {
     return row?.value;
   }
 
+  /// 订阅一个设置项。服务端推来新的设备名单时，界面要自己更新。
+  Stream<String?> watchSetting(String key) =>
+      (select(settings)..where((s) => s.key.equals(key)))
+          .watchSingleOrNull()
+          .map((row) => row?.value);
+
   Future<void> setSetting(String key, String? value) async {
     if (value == null) {
       await (delete(settings)..where((s) => s.key.equals(key))).go();

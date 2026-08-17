@@ -223,4 +223,37 @@ void main() {
       );
     });
   });
+
+  group('DEVICES', () {
+    test('往返', () {
+      const msg = DevicesMessage({'d1': '台式机', 'd2': '手机'});
+      final back = SyncMessage.fromJson(
+        jsonDecode(jsonEncode(msg.toJson())) as Map<String, Object?>,
+      );
+      expect(back, isA<DevicesMessage>());
+      expect((back as DevicesMessage).names, {'d1': '台式机', 'd2': '手机'});
+    });
+
+    test('names 缺失或类型不对时当空表，不抛异常', () {
+      // 协议演进时旧客户端可能收到形状不一样的消息，不该因此断连。
+      expect(
+        (SyncMessage.fromJson({'type': 'DEVICES'}) as DevicesMessage).names,
+        isEmpty,
+      );
+      expect(
+        (SyncMessage.fromJson({'type': 'DEVICES', 'names': '不是表'})
+                as DevicesMessage)
+            .names,
+        isEmpty,
+      );
+    });
+
+    test('跳过非字符串的键值', () {
+      final back = SyncMessage.fromJson({
+        'type': 'DEVICES',
+        'names': {'ok': '手机', 'bad': 123},
+      });
+      expect((back as DevicesMessage).names, {'ok': '手机'});
+    });
+  });
 }

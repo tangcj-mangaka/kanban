@@ -365,6 +365,11 @@ class Store {
     ]);
   }
 
+  /// 改设备名。设备在 HELLO 里报的名字变了就更新。
+  void renameDevice(String deviceId, String name) {
+    _db.execute('UPDATE devices SET name = ? WHERE id = ?', [name, deviceId]);
+  }
+
   void unpair(String deviceId) {
     _db.execute('DELETE FROM devices WHERE id = ?', [deviceId]);
   }

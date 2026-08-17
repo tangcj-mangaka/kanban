@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -160,6 +161,34 @@ final attachmentCountsProvider =
 final commentCountsProvider = StreamProvider.family<Map<String, int>, String>(
   (ref, boardId) => ref.watch(repositoryProvider).watchCommentCounts(boardId),
 );
+
+/// 某张卡片的改动记录。
+final cardChangesProvider =
+    StreamProvider.autoDispose.family<List<CardChange>, String>(
+      (ref, cardId) => ref.watch(repositoryProvider).watchCardChanges(cardId),
+    );
+
+/// 设备 ID → 设备名，服务端推来的名单。
+///
+/// 用来把改动记录里的设备 ID 翻译成人看得懂的名字。名单存在设置表里，
+/// 离线时照样能显示。
+final deviceNamesProvider = StreamProvider<Map<String, String>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchSetting(SyncKeys.deviceNames).map((raw) {
+    if (raw == null || raw.isEmpty) return const <String, String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, String>{};
+      return {
+        for (final e in decoded.entries)
+          if (e.key is String && e.value is String)
+            e.key as String: e.value as String,
+      };
+    } on FormatException {
+      return const <String, String>{};
+    }
+  });
+});
 
 /// 每张卡片的封面图（第一张图片附件），供画布和分组视图用。
 final cardCoversProvider =

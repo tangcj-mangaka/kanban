@@ -15,6 +15,9 @@ abstract final class SyncKeys {
   static const token = 'sync.token';
   static const deviceId = 'sync.device_id';
   static const deviceName = 'sync.device_name';
+
+  /// 设备 ID → 名字，JSON。服务端推来的名单。
+  static const deviceNames = 'sync.device_names';
   static const lastSeq = 'sync.last_seq';
 }
 
@@ -443,6 +446,12 @@ class SyncClient {
           _authBlocked = true;
           await _closeSocket();
         }
+
+      case DevicesMessage():
+        // 存起来给改动记录用：op 日志里记的是设备 ID，要靠这份名单
+        // 翻译成「手机」「台式机」。存到设置表而不是内存里——离线时
+        // 也得能显示名字，不然一断网改动记录就退回一串 ID。
+        await db.setSetting(SyncKeys.deviceNames, jsonEncode(msg.names));
 
       case SnapshotRequiredMessage():
         // 当前的压缩策略不会触发它（见协议里的说明），留给以后的墓碑回收。

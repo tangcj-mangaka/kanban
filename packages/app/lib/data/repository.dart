@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -25,6 +27,41 @@ class BoardSummary {
     required this.lastUpdated,
   });
 }
+
+/// 卡片上的一次改动。
+@immutable
+class CardChange {
+  final String opId;
+
+  /// 改的哪个字段（[CardF] 里的常量）。
+  final String field;
+
+  /// 改成了什么。类型随字段而定，可能是 null（表示置空）。
+  final Object? value;
+
+  final String deviceId;
+
+  /// 产生这条改动的设备的本地时间。**只用于显示**——设备时钟不可靠，
+  /// 定序一律靠 [seq]。
+  final int wallTs;
+
+  /// 服务端分配的序号。还没同步出去的改动为 null。
+  final int? seq;
+
+  /// 是不是这个字段当前生效的那一条。
+  final bool current;
+
+  const CardChange({
+    required this.opId,
+    required this.field,
+    required this.value,
+    required this.deviceId,
+    required this.wallTs,
+    required this.seq,
+    required this.current,
+  });
+}
+
 
 /// 一条搜索结果：命中的卡片，以及它所属看板的名字和颜色。
 ///
@@ -628,6 +665,88 @@ class Repository {
       return covers;
     });
   }
+
+
+  /// 这张卡片的全部改动记录，最近的在前。
+  ///
+  /// **数据本来就存着**——底层是只增不删的操作日志，每条都记了哪台设备、
+  /// 什么时候、把哪个字段改成了什么。这里只是把它读出来，没有任何新存储。
+  ///
+  /// 这是多设备离线各自修改后「到底谁的版本被留下了」唯一能查的地方：
+  /// 字段级 LWW 只保留一个赢家，输掉的那份不会出现在卡片上，但它一直
+  /// 在日志里。
+  ///
+  /// 只看内容类字段，不看坐标、层级、折叠这些——那些每拖一下就产生一条，
+  /// 会把真正有意义的改动淹掉。
+  Stream<List<CardChange>> watchCardChanges(String cardId) {
+    const interesting = {
+      CardF.title,
+      CardF.body,
+      CardF.color,
+      CardF.done,
+      CardF.archived,
+      kDeleted,
+    };
+
+    final q = db.select(db.ops)
+      ..where(
+        (o) =>
+            o.entity.equals(Entity.card) &
+            o.entityId.equals(cardId) &
+            o.field.isIn(interesting.toList()),
+      );
+
+    return q.watch().map((rows) {
+      // 每个字段当前的赢家：定序键最大的那条。和 applyOp 用的是同一把尺子。
+      final winners = <String, OpRow>{};
+      for (final r in rows) {
+        final cur = winners[r.field];
+        if (cur == null ||
+            compareOpOrder(cur.seq, cur.localSeq, r.seq, r.localSeq) < 0) {
+          winners[r.field] = r;
+        }
+      }
+
+      final list = [
+        for (final r in rows)
+          CardChange(
+            opId: r.opId,
+            field: r.field,
+            value: jsonDecode(r.valueJson),
+            deviceId: r.deviceId,
+            wallTs: r.wallTs,
+            seq: r.seq,
+            current: winners[r.field]?.opId == r.opId,
+          ),
+      ];
+
+      // 按**定序键**倒序，不按 wallTs。
+      //
+      // 两个原因：一是设备时钟不可靠，跨设备按 wallTs 排会得出错误的
+      // 先后；二是同一毫秒内的多次修改 wallTs 相同，而 Dart 的 sort
+      // 不保证稳定，顺序会变——列表每次刷新都可能重排。
+      //
+      // 定序键是全局唯一且严格递增的，和「谁最终赢了」用的是同一把尺子，
+      // 所以列表顺序和卡片上的实际内容永远对得上。wallTs 只用来显示。
+      list.sort((a, b) {
+        final ra = rows.firstWhere((r) => r.opId == a.opId);
+        final rb = rows.firstWhere((r) => r.opId == b.opId);
+        return compareOpOrder(rb.seq, rb.localSeq, ra.seq, ra.localSeq);
+      });
+      return list;
+    });
+  }
+
+  /// 把某个字段恢复成历史上的某个值。
+  ///
+  /// 不是「回滚」——它产生一条**新的** op，值等于旧值。这样恢复本身也是
+  /// 一次可追溯的改动，会同步给别的设备，也能再被恢复回去。
+  Future<void> restoreCardValue(
+    String boardId,
+    String cardId,
+    String field,
+    Object? value,
+  ) => setCardField(boardId, cardId, field, value);
 
   // -------------------------------------------------------------------------
   // 附件

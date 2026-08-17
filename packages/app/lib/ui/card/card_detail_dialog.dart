@@ -10,6 +10,7 @@ import '../responsive.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
 import 'attachment_section.dart';
+import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
 
 /// 打开卡片详情。
@@ -184,6 +185,7 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               value: 'collapse',
               child: Text(card.collapsed ? '在画布上展开' : '在画布上折叠'),
             ),
+            const PopupMenuItem(value: 'history', child: Text('改动记录')),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'archive', child: Text('收进干草仓库')),
             const PopupMenuItem(value: 'delete', child: Text('删除卡片')),
@@ -379,6 +381,8 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
           !card.collapsed,
           touch: false,
         );
+      case 'history':
+        await showCardHistory(context, widget.boardId, card.id);
       case 'archive':
         await repo.archiveCard(widget.boardId, card.id);
         if (mounted) Navigator.pop(context);

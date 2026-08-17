@@ -41,6 +41,10 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
   target_compile_options(${TARGET} PRIVATE /EHsc)
+  # 源码是 UTF-8 无 BOM。不明说的话 MSVC 会按系统本地代码页去解释，
+  # main.cpp 里写死的窗口标题「驴看板」就会变成 é©´çœ‹æ¿ ——
+  # 那正是 UTF-8 字节被当成 Latin-1 读出来的样子。
+  target_compile_options(${TARGET} PRIVATE /utf-8)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()

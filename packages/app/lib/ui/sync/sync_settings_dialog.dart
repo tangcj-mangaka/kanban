@@ -180,6 +180,18 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
               ),
       ),
       actions: [
+        // 版本号放在这里：版本对不上是同步出问题时的常见原因之一，
+        // 而这个弹窗正是出问题时会打开的地方。
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Text(
+            '版本 $kAppVersion',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.kanban.cardBody.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+        const Spacer(),
         if (paired)
           TextButton(
             onPressed: _forget,

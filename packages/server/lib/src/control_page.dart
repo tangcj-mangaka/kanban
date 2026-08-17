@@ -102,6 +102,7 @@ String renderControlPage({
   <header>
     <h1>驴看板服务端</h1>
     <div class="sub">这台机器上的同步服务。关掉这个网页不影响它运行。</div>
+    <div class="sub">版本 $kAppVersion</div>
   </header>
 
   <section>

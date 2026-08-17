@@ -17,11 +17,41 @@ permissions:
   contents: write
 
 jobs:
+  # 标签和代码里的版本号对不上就别往下走了。
+  #
+  # 不校验的话，迟早会发出一个「标签写 v0.2.0、应用里显示 0.1.0」的包，
+  # 而这种包发出去之后没法回收，用户报问题时你也分不清他装的是哪一版。
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验标签与 kAppVersion 一致
+        run: |
+          CODE=$(grep -oE "kAppVersion = '[^']+'" \
+            packages/shared/lib/src/version.dart | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+          echo "代码里的版本：$CODE"
+
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "手动触发，不校验标签。"
+            exit 0
+          fi
+
+          echo "标签：$GITHUB_REF_NAME"
+          if [ "$GITHUB_REF_NAME" != "v$CODE" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 和代码里的版本 $CODE 对不上。"
+            echo "::error::要么把标签改成 v$CODE，要么先把 version.dart 和两个"
+            echo "::error::pubspec.yaml 里的版本号一起改掉再打标签。"
+            exit 1
+          fi
+
   android:
+    needs: check-version
     uses: ./.github/workflows/android.yml
     secrets: inherit
 
   windows:
+    needs: check-version
     uses: ./.github/workflows/windows.yml
     secrets: inherit
 

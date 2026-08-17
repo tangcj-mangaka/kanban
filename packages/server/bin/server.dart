@@ -61,6 +61,7 @@ Future<void> main(List<String> args) async {
     port,
   );
 
+  _log('驴看板服务端 $kAppVersion');
   _log('数据目录 $dataDir');
   _log('已有 ${store.opCount} 条操作记录，最大序号 ${store.maxSeq}');
   _log('已配对设备 ${store.devices.length} 台');

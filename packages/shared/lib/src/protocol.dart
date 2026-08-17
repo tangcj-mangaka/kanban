@@ -17,6 +17,7 @@ abstract final class MsgType {
   static const ack = 'ACK';
   static const broadcast = 'BROADCAST';
   static const snapshotRequired = 'SNAPSHOT_REQUIRED';
+  static const devices = 'DEVICES';
   static const error = 'ERROR';
   static const pong = 'PONG';
 
@@ -58,6 +59,7 @@ sealed class SyncMessage {
       MsgType.editing => EditingMessage.fromJson(json),
       MsgType.paired => PairedMessage.fromJson(json),
       MsgType.snapshotRequired => const SnapshotRequiredMessage(),
+      MsgType.devices => DevicesMessage.fromJson(json),
       MsgType.error => ErrorMessage.fromJson(json),
       final other => UnknownMessage('$other'),
     };
@@ -257,6 +259,39 @@ class PairedMessage extends SyncMessage {
 
   factory PairedMessage.fromJson(Map<String, Object?> json) =>
       PairedMessage((json['token'] as String?) ?? '');
+}
+
+/// 服务端告诉客户端「已配对的设备都叫什么名字」。
+///
+/// 客户端拿它做 **设备 ID → 名字** 的翻译：op 日志里记的是设备 ID
+/// （一串 UUID），而卡片的改动记录要显示「手机」「台式机」这样的名字，
+/// 不然用户看到 `设备 a3f2…` 根本不知道是哪台。
+///
+/// 只有服务端知道全部设备名——每台设备是在 HELLO 里报自己的名字的，
+/// 客户端之间不直接通信。所以只能由服务端转告。
+///
+/// 握手完成后推一次，之后有设备配对或改名时再推。
+class DevicesMessage extends SyncMessage {
+  /// 设备 ID → 设备名。
+  final Map<String, String> names;
+
+  const DevicesMessage(this.names);
+
+  @override
+  String get type => MsgType.devices;
+
+  @override
+  Map<String, Object?> toJson() => {'type': type, 'names': names};
+
+  factory DevicesMessage.fromJson(Map<String, Object?> json) {
+    final raw = json['names'];
+    if (raw is! Map) return const DevicesMessage({});
+    return DevicesMessage({
+      for (final e in raw.entries)
+        if (e.key is String && e.value is String)
+          e.key as String: e.value as String,
+    });
+  }
 }
 
 /// 要求客户端丢弃本地状态、走全量重建。

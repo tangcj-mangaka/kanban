@@ -34,18 +34,55 @@ class TestClient {
 
   void send(SyncMessage msg) => channel.sink.add(jsonEncode(msg.toJson()));
 
-  /// 等下一条消息。超时就失败，免得测试挂死。
-  Future<SyncMessage> next() =>
-      incoming.next.timeout(const Duration(seconds: 5));
+  /// 收到过的设备名单，按到达顺序。
+  final List<DevicesMessage> devices = [];
+
+  /// 等下一条消息，**跳过设备名单**。
+  ///
+  /// DEVICES 是旁路通知：握手后会来一条，之后任何设备配对或改名也会来。
+  /// 它落在哪两条消息之间不属于协议约定，大多数测试不该因此改写。
+  /// 真要断言名单内容的用 [nextDevices]。
+  Future<SyncMessage> next() async {
+    while (true) {
+      final msg = await incoming.next.timeout(const Duration(seconds: 5));
+      if (msg is DevicesMessage) {
+        devices.add(msg);
+        continue;
+      }
+      return msg;
+    }
+  }
+
+  /// 等下一条设备名单，中间别的消息一律丢掉。
+  Future<DevicesMessage> nextDevices() async {
+    while (true) {
+      final msg = await incoming.next.timeout(const Duration(seconds: 5));
+      if (msg is DevicesMessage) {
+        devices.add(msg);
+        return msg;
+      }
+    }
+  }
 
   /// 一段时间内没有新消息才算通过——用来断言「不该收到」。
+  ///
+  /// 和 [next] 一样跳过设备名单：那是旁路通知，不算「回应」。
   Future<void> expectSilence([
     Duration window = const Duration(milliseconds: 300),
   ]) async {
-    final got = await incoming.hasNext
-        .timeout(window, onTimeout: () => false)
-        .catchError((_) => false);
-    expect(got, isFalse, reason: '不该收到消息，却收到了');
+    while (true) {
+      final got = await incoming.hasNext
+          .timeout(window, onTimeout: () => false)
+          .catchError((_) => false);
+      if (!got) return;
+
+      final msg = await incoming.next;
+      if (msg is DevicesMessage) {
+        devices.add(msg);
+        continue;
+      }
+      fail('不该收到消息，却收到了 ${msg.type}');
+    }
   }
 
   Future<void> close() async {
@@ -385,6 +422,106 @@ void main() {
       client.send(const PingMessage());
       expect(await client.next(), isA<PongMessage>());
       await client.close();
+    });
+  });
+
+  group('设备名单', () {
+    test('握手后收到一份名单，包含自己', () async {
+      final (client, _) = await pairedClient('dev-1', '台式机');
+      final msg = await client.nextDevices();
+      expect(msg.names, {'dev-1': '台式机'});
+      await client.close();
+    });
+
+    test('新设备配对时，已在线的设备也收到更新后的名单', () async {
+      // 这是名单必须广播的理由：别的设备靠它才知道新来的这台叫什么，
+      // 否则改动记录里只能显示一串设备 ID。
+      final (a, _) = await pairedClient('dev-1', '台式机');
+      await a.nextDevices();
+
+      final (b, _) = await pairedClient('dev-2', '手机');
+
+      final updated = await a.nextDevices();
+      expect(updated.names, {'dev-1': '台式机', 'dev-2': '手机'});
+
+      await a.close();
+      await b.close();
+    });
+
+    test('老设备只是重连时，不打扰别人', () async {
+      // 名单没变就不该广播——每次有人重连都给所有人发一遍纯属噪音。
+      final (a, tokenA) = await pairedClient('dev-1', '台式机');
+      final (b, _) = await pairedClient('dev-2', '手机');
+      await a.nextDevices();
+      await a.nextDevices();
+      await b.nextDevices();
+
+      final again = await TestClient.connect(port);
+      again.send(
+        HelloMessage(
+          deviceId: 'dev-1',
+          deviceName: '台式机',
+          token: tokenA,
+          pairCode: null,
+          lastSeq: 0,
+        ),
+      );
+      await again.next(); // SYNC
+      expect(await again.nextDevices(), isNotNull, reason: '重连的这台自己要收到');
+
+      // b 不该因为 a 重连而收到新名单。
+      await b.expectSilence();
+      expect(b.devices, hasLength(1), reason: 'b 只在自己配对时收过一份');
+
+      await a.close();
+      await b.close();
+      await again.close();
+    });
+
+    test('设备改名后，名单跟着更新并广播', () async {
+      final (a, tokenA) = await pairedClient('dev-1', '旧名字');
+      final (b, _) = await pairedClient('dev-2', '手机');
+      await b.nextDevices();
+
+      final renamed = await TestClient.connect(port);
+      renamed.send(
+        HelloMessage(
+          deviceId: 'dev-1',
+          deviceName: '新名字',
+          token: tokenA,
+          pairCode: null,
+          lastSeq: 0,
+        ),
+      );
+      await renamed.next(); // SYNC
+
+      final onB = await b.nextDevices();
+      expect(onB.names['dev-1'], '新名字');
+      expect(
+        store.deviceById('dev-1')!.name,
+        '新名字',
+        reason: '改名要落库，不然下次启动又回到旧名字',
+      );
+
+      await a.close();
+      await b.close();
+      await renamed.close();
+    });
+
+    test('踢掉设备后，名单里不再有它', () async {
+      final (a, _) = await pairedClient('dev-1', '台式机');
+      final (b, _) = await pairedClient('dev-2', '手机');
+      await a.nextDevices();
+      await a.nextDevices();
+
+      store.unpair('dev-2');
+      expect(
+        {for (final d in store.devices) d.id},
+        {'dev-1'},
+      );
+
+      await a.close();
+      await b.close();
     });
   });
 }
