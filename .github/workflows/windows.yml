@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # 供 release.yml 调用。
+  #
+  # 让发布流程复用这里，而不是把构建步骤再抄一份——抄一份的话，
+  # 以后在一处修了 bug，另一处会悄悄烂掉。
+  workflow_call:
 
 concurrency:
   group: windows-${{ github.ref }}

@@ -1,0 +1,89 @@
+name: 发布
+
+# 打一个 v 开头的标签就出一次正式发布，比如：
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# 为什么单独做这个而不是直接让人下 Actions 的产物：Actions 产物**必须
+# 登录 GitHub 账号才能下载**（公开仓库也一样），而且会过期。Release 的
+# 附件谁都能直接下，链接也是固定的。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# 建 Release 要写权限。
+permissions:
+  contents: write
+
+jobs:
+  android:
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  windows:
+    uses: ./.github/workflows/windows.yml
+    secrets: inherit
+
+  publish:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取回三个构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 打包成发布附件
+        id: pack
+        run: |
+          # 手动触发（没有标签）时用短提交号，好歹能区分。
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            TAG="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          mkdir -p dist
+
+          # Windows 两个产物都是**文件夹**（exe 旁边的 dll 少一个都跑不起来），
+          # 得打成 zip 才能当附件传。
+          (cd artifacts/kanban-windows && zip -qr "../../dist/驴看板-桌面版-$TAG.zip" .)
+          (cd artifacts/kanban-server-windows && zip -qr "../../dist/驴看板-服务端-$TAG.zip" .)
+
+          cp artifacts/kanban-android/app-release.apk "dist/驴看板-$TAG.apk"
+
+          ls -la dist
+
+      - name: 建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.pack.outputs.tag }}"
+
+          cat > notes.md <<'EOF'
+          局域网同步的看板应用。三个文件按需要下载：
+
+          | 文件 | 装在哪 | 说明 |
+          |---|---|---|
+          | `驴看板-桌面版-*.zip` | Windows 电脑 | 客户端。解压后**整个文件夹留着**，运行里面的 `kanban.exe` |
+          | `驴看板-服务端-*.zip` | 其中一台常开的 Windows 电脑 | 同步服务端。只要一台跑就够了 |
+          | `驴看板-*.apk` | 安卓手机 | 手机客户端 |
+
+          **不装服务端也能用**——那样就是一台设备上的单机看板，数据全在本地。
+          想让电脑和手机互通，才需要找一台电脑跑服务端。
+
+          详细说明见仓库首页的 README。
+          EOF
+
+          # 标签已经存在同名 Release 时就更新，不重复建。
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "驴看板 $TAG" \
+              --notes-file notes.md
+          fi
