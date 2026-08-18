@@ -68,7 +68,25 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
         state.status != SyncStatus.disabled && _hostController.text.isNotEmpty;
 
     return AlertDialog(
-      title: const Text('局域网同步'),
+      title: Row(
+        children: [
+          const Text('局域网同步'),
+          const Spacer(),
+          // 版本号：版本对不上是同步出问题的常见原因之一，而这个弹窗
+          // 正是出问题时会打开的地方。
+          //
+          // **放在标题行而不是 actions 里。** actions 用的是 OverflowBar，
+          // 不是 Flex，而 Spacer 本质是 Expanded——放进去调试版断言失败、
+          // 发布版直接抛类型错误，整个弹窗内容会被换成一个灰色方块。
+          // 这里的 Row 是货真价实的 Flex，Spacer 才合法。
+          Text(
+            '版本 $kAppVersion',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.kanban.cardBody.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: dialogWidth(context, 420),
         child: !_loaded
@@ -180,18 +198,6 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
               ),
       ),
       actions: [
-        // 版本号放在这里：版本对不上是同步出问题时的常见原因之一，
-        // 而这个弹窗正是出问题时会打开的地方。
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Text(
-            '版本 $kAppVersion',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.kanban.cardBody.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        const Spacer(),
         if (paired)
           TextButton(
             onPressed: _forget,
