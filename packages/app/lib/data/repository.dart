@@ -158,7 +158,8 @@ class Repository {
     value: name,
   );
 
-  Future<void> setBoardColor(String id, String colorKey) => db.emit(
+  /// 看板封面色。[colorKey] 为 null 表示无色。
+  Future<void> setBoardColor(String id, String? colorKey) => db.emit(
     boardId: id,
     entity: Entity.board,
     entityId: id,

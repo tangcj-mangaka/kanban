@@ -59,3 +59,17 @@ class CanvasTransform {
   @override
   int get hashCode => Object.hash(offset, scale);
 }
+
+/// 世界坐标 [world] 落在哪一项上；都没落中就返回 null。
+///
+/// **从后往前找**：画布上后画的盖在先画的上面，用户看到的、也应该命中的
+/// 是最上面那张。正着找会命中被压在底下的那张。
+///
+/// 抽成纯函数是因为它决定「双击到底算在卡片上还是空白处」——这个判断
+/// 错了会在卡片上凭空多出一张卡，而重叠、边界这些情况在界面上很难点准。
+T? topmostAt<T>(Offset world, List<T> items, Rect Function(T) rectOf) {
+  for (final item in items.reversed) {
+    if (rectOf(item).contains(world)) return item;
+  }
+  return null;
+}

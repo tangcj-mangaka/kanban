@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'bootstrap.dart';
 import 'providers.dart';
+import 'ui/boards/board_dialogs.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/board/board_page.dart';
 import 'ui/card/card_detail_dialog.dart';
@@ -109,6 +110,9 @@ const _focusFirst = bool.fromEnvironment('FOCUS');
 /// 从外面调不到——只能让它自己触发，否则验的就不是真实路径。
 const _autoTidy = bool.fromEnvironment('TIDY');
 
+/// `--dart-define=BOARD_INDEX=1` 时打开第几块看板（默认第 0 块）。
+const _boardIndex = int.fromEnvironment('BOARD_INDEX');
+
 /// `--dart-define=LIST=true` 时停在看板列表页而不是直接进第一块看板。
 const _showList = bool.fromEnvironment('LIST');
 
@@ -160,7 +164,7 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
     }
     if (boards.isEmpty) return const BoardListPage();
 
-    final boardId = boards.first.board.id;
+    final boardId = boards[_boardIndex.clamp(0, boards.length - 1)].board.id;
     if (_autoOpen.isNotEmpty && !_opened) {
       final cards = ref.watch(canvasCardsProvider(boardId)).value;
       if (_autoOpen == 'sync') {
@@ -168,6 +172,12 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           showSyncSettings(context);
+        });
+      } else if (_autoOpen == 'color' && cards != null && cards.isNotEmpty) {
+        _opened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          pickSwatch(context, current: cards.first.color);
         });
       } else if (_autoOpen == 'history' && cards != null && cards.isNotEmpty) {
         // 优先挑有并发冲突的那张——验证的就是冲突提示，挑一张没冲突的

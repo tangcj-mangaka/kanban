@@ -153,11 +153,11 @@ class _TagTile extends ConsumerWidget {
             message: '改颜色',
             child: InkWell(
               onTap: () async {
-                final key = await pickSwatch(context, current: tag.color);
-                if (key != null) {
+                final choice = await pickSwatch(context, current: tag.color, allowNone: false);
+                if (choice?.key != null) {
                   await ref
                       .read(repositoryProvider)
-                      .setTagColor(boardId, tag.id, key);
+                      .setTagColor(boardId, tag.id, choice!.key!);
                 }
               },
               borderRadius: BorderRadius.circular(20),
@@ -216,8 +216,10 @@ class _TagTile extends ConsumerWidget {
         );
         if (name != null) await repo.renameTag(boardId, tag.id, name);
       case 'color':
-        final key = await pickSwatch(context, current: tag.color);
-        if (key != null) await repo.setTagColor(boardId, tag.id, key);
+        final choice = await pickSwatch(context, current: tag.color, allowNone: false);
+        if (choice?.key != null) {
+          await repo.setTagColor(boardId, tag.id, choice!.key!);
+        }
       case 'delete':
         if (!context.mounted) return;
         final ok = await _confirmDelete(context, tag.name, cardCount);

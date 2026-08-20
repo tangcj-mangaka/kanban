@@ -8,6 +8,8 @@ import 'package:shared/shared.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../board/board_search.dart';
+import '../board/done_filter.dart';
+import '../board/done_filter_button.dart';
 import '../boards/board_dialogs.dart';
 import '../empty_state.dart';
 import '../card/card_detail_dialog.dart';
@@ -39,11 +41,21 @@ class CanvasView extends ConsumerStatefulWidget {
   /// 否则验证的就不是真实路径。
   final bool autoTidy;
 
+  /// 按完成状态筛选。
+  ///
+  /// 画布上是**淡化**而不是隐藏，和搜索一个道理：卡片的位置本身就是信息，
+  /// 把已完成的抽走会在画布上留下一堆莫名其妙的空洞，切回「全部」时
+  /// 又得重新找方位。
+  final DoneFilter doneFilter;
+  final VoidCallback onCycleDoneFilter;
+
   const CanvasView({
     super.key,
     required this.boardId,
     this.search = BoardSearch.none,
     this.autoTidy = false,
+    this.doneFilter = DoneFilter.all,
+    required this.onCycleDoneFilter,
   });
 
   @override
@@ -264,6 +276,11 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
       child: Row(
         children: [
           const Spacer(),
+          DoneFilterButton(
+            value: widget.doneFilter,
+            onTap: widget.onCycleDoneFilter,
+          ),
+          const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.grid_view_rounded,
             label: '整理',
@@ -404,7 +421,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     final screen = _t.toScreen(world);
 
     final search = widget.search;
-    final dimmed = search.active && !search.matches(card);
+    final dimmed =
+        (search.active && !search.matches(card)) ||
+        !widget.doneFilter.accepts(cardIsDone: card.done);
     final focused = search.active && card.id == search.focusCardId;
 
     return Positioned(
@@ -520,6 +539,22 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     );
   }
 
+  /// 世界坐标 [world] 落在哪张卡片上；没有就返回 null。
+  ///
+  /// 用的是量到的真实高度（和「整理」同一份数据）。还没量到的卡片退回
+  /// 一个估值——宁可多挡一点，也好过在卡片上误建。
+  ///
+  /// 从后往前找：画布上后画的盖在先画的上面，命中的应该是最上面那张。
+  CardRow? _cardAt(Offset world) {
+    final cards =
+        ref.read(canvasCardsProvider(widget.boardId)).value ?? const [];
+    return topmostAt(
+      world,
+      cards,
+      (c) => Rect.fromLTWH(c.x, c.y, c.width, _cardHeights[c.id] ?? 150.0),
+    );
+  }
+
   void _bringToFront(CardRow card) {
     if (_editingId != null && _editingId != card.id) _commitTitle();
     ref.read(repositoryProvider).bringToFront(widget.boardId, card.id);
@@ -556,6 +591,17 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   Future<void> _onCanvasDoubleTap(TapDownDetails d) async {
     _commitTitle();
     final world = _t.toWorld(d.localPosition);
+
+    // 双击点落在某张卡片上时**什么都不做**。
+    //
+    // 这是一道保险。正常情况下卡片自己的双击（打开详情）会先接住，轮不到
+    // 这里；但手势判定有它的脾气——鼠标在两次点击之间挪动两个像素，卡片
+    // 的双击就可能被判成拖动而作废，于是背景这条路捡了漏，在卡片上凭空
+    // 多出一张新卡。
+    //
+    // 「双击没反应」是可以接受的失败，「卡片上莫名多出一张卡」不是。
+    if (_cardAt(world) != null) return;
+
     final repo = ref.read(repositoryProvider);
     final id = await repo.createCard(
       boardId: widget.boardId,
@@ -622,9 +668,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
           touch: false,
         );
       case 'color':
-        final key = await pickSwatch(context, current: card.color);
-        if (key != null) {
-          await repo.setCardField(widget.boardId, card.id, CardF.color, key);
+        final choice = await pickSwatch(context, current: card.color);
+        if (choice != null) {
+          await repo.setCardField(widget.boardId, card.id, CardF.color, choice.key);
         }
       case 'tags':
         if (!mounted) return;

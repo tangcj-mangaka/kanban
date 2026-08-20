@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../board/board_search.dart';
+import '../board/done_filter.dart';
+import '../board/done_filter_button.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
@@ -41,10 +43,16 @@ class GroupedView extends ConsumerStatefulWidget {
   /// 列表里位置不承载信息，留一堆灰条只会让人多滑几屏。
   final BoardSearch search;
 
+  /// 按完成状态筛选。同样是过滤。
+  final DoneFilter doneFilter;
+  final VoidCallback onCycleDoneFilter;
+
   const GroupedView({
     super.key,
     required this.boardId,
     this.search = BoardSearch.none,
+    this.doneFilter = DoneFilter.all,
+    required this.onCycleDoneFilter,
   });
 
   @override
@@ -81,9 +89,10 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
         const <String, AttachmentRow>{};
 
     final compact = isCompact(context);
-    final matched = widget.search.active
-        ? cards.where(widget.search.matches).toList()
-        : cards;
+    final matched = cards
+        .where(widget.search.matches)
+        .where((c) => widget.doneFilter.accepts(cardIsDone: c.done))
+        .toList();
     final columns = _buildColumns(matched, tags, cardTags);
     final visible = _showEmpty
         ? columns
@@ -102,10 +111,14 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
               curve: Curves.easeOut,
             ),
           ),
+        // 没有标签时给一条细提示，但**不挡住卡片**。
+        //
+        // 原来这里是整屏的提示，把「未分类」那一列连同里面所有卡片一起
+        // 顶掉了——用户看到的是「分组视图里我的卡片全没了」。分组视图的
+        // 本职是展示卡片，没有标签只是「只有一列」，不是「没有内容」。
+        if (tags.isEmpty) _NoTagsHint(boardId: widget.boardId),
         Expanded(
-          child: tags.isEmpty
-              ? _NoTagsHint(boardId: widget.boardId)
-              : compact
+          child: compact
               // 手机上整屏一列、左右滑动切换。横向滚一条窄柱在小屏上
               // 又难看又难点。
               ? PageView.builder(
@@ -184,6 +197,11 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
             ),
           ),
           const SizedBox(width: 8),
+          DoneFilterButton(
+            value: widget.doneFilter,
+            onTap: widget.onCycleDoneFilter,
+          ),
+          const SizedBox(width: 4),
           PopupMenuButton<GroupSort>(
             tooltip: '列内排序方式',
             initialValue: _sort,
@@ -638,29 +656,33 @@ class _NoTagsHint extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    final k = theme.kanban;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: k.hairline.withValues(alpha: 0.3),
+        border: Border(bottom: BorderSide(color: k.hairline)),
+      ),
+      child: Row(
         children: [
-          Text(
-            '这个看板还没有标签',
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.kanban.cardTitle,
+          Icon(Icons.label_outline, size: 15, color: k.cardBody),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '这个看板还没有标签，所以只有「未分类」一列。'
+              '分组视图按标签分列，有多少标签就有多少列。',
+              style: theme.textTheme.bodySmall?.copyWith(color: k.cardBody),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '分组视图按标签分列。有多少标签就有多少列，不用挑。',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.kanban.cardBody,
-            ),
-          ),
-          const SizedBox(height: 18),
           Builder(
-            builder: (context) => FilledButton.icon(
+            builder: (context) => TextButton.icon(
               onPressed: () => Scaffold.of(context).openEndDrawer(),
-              icon: const Icon(Icons.label_outline, size: 17),
+              icon: const Icon(Icons.label_outline, size: 15),
               label: const Text('管理标签'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ),
         ],

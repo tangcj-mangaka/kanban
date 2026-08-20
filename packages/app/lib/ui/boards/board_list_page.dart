@@ -560,8 +560,8 @@ class _BoardMenu extends ConsumerWidget {
         );
         if (name != null) await repo.renameBoard(board.id, name);
       case 'color':
-        final key = await pickSwatch(context, current: board.color);
-        if (key != null) await repo.setBoardColor(board.id, key);
+        final choice = await pickSwatch(context, current: board.color);
+        if (choice != null) await repo.setBoardColor(board.id, choice.key);
       case 'delete':
         final ok = await confirmDeleteBoard(context, board.name);
         if (ok) await repo.deleteBoard(board.id);

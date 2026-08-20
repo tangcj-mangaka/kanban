@@ -12,6 +12,7 @@ import '../responsive.dart';
 import '../theme/app_theme.dart';
 import '../theme/haystack_icon.dart';
 import 'board_search.dart';
+import 'done_filter.dart';
 
 enum BoardView {
   canvas('画布', Icons.dashboard_outlined),
@@ -76,6 +77,11 @@ class BoardPage extends ConsumerStatefulWidget {
 class _BoardPageState extends ConsumerState<BoardPage> {
   BoardView? _view;
   BoardSearch _search = BoardSearch.none;
+
+  /// 按完成状态筛选。**每块看板各记各的**，存在本机设置里、不同步——
+  /// 这是「我现在想看什么」，不是数据本身，没有理由让别的设备跟着变。
+  DoneFilter _doneFilter = DoneFilter.all;
+  String get _filterKey => 'done_filter.${widget.boardId}';
   bool _searchBarOpen = false;
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
@@ -90,6 +96,13 @@ class _BoardPageState extends ConsumerState<BoardPage> {
   @override
   void initState() {
     super.initState();
+
+    // 读盘是异步的，先用「全部」开着，读到了再切。
+    ref.read(databaseProvider).getSetting(_filterKey).then((saved) {
+      if (!mounted) return;
+      final f = DoneFilter.parse(saved);
+      if (f != _doneFilter) setState(() => _doneFilter = f);
+    });
 
     final q = widget.initialSearch;
     if (q != null && q.isNotEmpty) {
@@ -132,6 +145,12 @@ class _BoardPageState extends ConsumerState<BoardPage> {
         _search = BoardSearch.none;
       }
     });
+  }
+
+  void _cycleDoneFilter() {
+    final next = _doneFilter.next;
+    setState(() => _doneFilter = next);
+    ref.read(databaseProvider).setSetting(_filterKey, next.name);
   }
 
   void _closeSearch() {
@@ -296,10 +315,14 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                       boardId: widget.boardId,
                       search: _search,
                       autoTidy: widget.autoTidy,
+                      doneFilter: _doneFilter,
+                      onCycleDoneFilter: _cycleDoneFilter,
                     ),
                     BoardView.grouped => GroupedView(
                       boardId: widget.boardId,
                       search: _search,
+                      doneFilter: _doneFilter,
+                      onCycleDoneFilter: _cycleDoneFilter,
                     ),
                     BoardView.haystack => HaystackView(boardId: widget.boardId),
                   },

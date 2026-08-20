@@ -136,13 +136,13 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
           message: '改颜色',
           child: InkWell(
             onTap: () async {
-              final key = await pickSwatch(context, current: card.color);
-              if (key != null && mounted) {
+              final choice = await pickSwatch(context, current: card.color);
+              if (choice != null && mounted) {
                 await ref.read(repositoryProvider).setCardField(
                       widget.boardId,
                       card.id,
                       CardF.color,
-                      key,
+                      choice.key,
                     );
               }
             },
