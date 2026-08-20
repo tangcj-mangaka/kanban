@@ -1,6 +1,6 @@
 name: server
 description: 驴看板的局域网同步服务端。单文件可执行，托盘常驻。
-version: 0.3.1
+version: 0.3.2
 publish_to: none
 
 environment:
