@@ -16,6 +16,7 @@ import '../card/card_detail_dialog.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
 import 'canvas_card.dart';
+import 'card_gestures.dart';
 import 'canvas_transform.dart';
 import 'grid_painter.dart';
 
@@ -442,13 +443,34 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
           child: Stack(
           clipBehavior: Clip.none,
           children: [
-            GestureDetector(
+            // 用 RawGestureDetector 而不是 GestureDetector，只为了换掉
+            // 拖动识别器——见 [CardPanRecognizer]：鼠标下 2 像素就判成拖动，
+            // 会把双击吃掉。其余（点击提到最前、双击开详情）行为不变。
+            RawGestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (_) => _bringToFront(card),
-              onDoubleTap: () => _openDetail(card),
-              onPanStart: (d) => _onCardDragStart(card, d),
-              onPanUpdate: _onCardDragUpdate,
-              onPanEnd: (_) => _onCardDragEnd(card),
+              gestures: {
+                TapGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                      TapGestureRecognizer.new,
+                      (r) => r.onTapDown = (_) => _bringToFront(card),
+                    ),
+                DoubleTapGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      DoubleTapGestureRecognizer
+                    >(
+                      DoubleTapGestureRecognizer.new,
+                      (r) => r.onDoubleTap = () => _openDetail(card),
+                    ),
+                CardPanRecognizer:
+                    GestureRecognizerFactoryWithHandlers<CardPanRecognizer>(
+                      CardPanRecognizer.new,
+                      (r) {
+                        r.onStart = (d) => _onCardDragStart(card, d);
+                        r.onUpdate = _onCardDragUpdate;
+                        r.onEnd = (_) => _onCardDragEnd(card);
+                      },
+                    ),
+              },
               child: _MeasureHeight(
                 onChange: (h) => _cardHeights[card.id] = h,
                 child: CanvasCard(
