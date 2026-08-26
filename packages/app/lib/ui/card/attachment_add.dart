@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mime/mime.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:path/path.dart' as p;
 
 import '../../providers.dart';
@@ -97,4 +98,41 @@ String pastedImageName(Uint8List bytes) {
       '${now.year}${two(now.month)}${two(now.day)}'
       '-${two(now.hour)}${two(now.minute)}${two(now.second)}';
   return '粘贴的图片-$stamp.$ext';
+}
+
+/// 把剪贴板里的东西加成附件。
+///
+/// 返回 **是否真的加了**——调用方要靠它决定「这次 Ctrl+V 我接管了」还是
+/// 「不关我事，还给输入框去粘文字」。
+///
+/// 认两种东西：剪贴板里的**图像数据**（从聊天工具复制的图），以及剪贴板里
+/// 的**文件路径**（在资源管理器里复制的文件）。
+Future<bool> pasteAttachment(
+  WidgetRef ref, {
+  required String boardId,
+  required String cardId,
+}) async {
+  final image = await Pasteboard.image;
+  if (image != null && image.isNotEmpty) {
+    await addAttachmentBytes(
+      ref,
+      boardId: boardId,
+      cardId: cardId,
+      bytes: image,
+    );
+    return true;
+  }
+
+  final paths = await Pasteboard.files();
+  if (paths.isNotEmpty) {
+    await addAttachmentFiles(
+      ref,
+      boardId: boardId,
+      cardId: cardId,
+      files: [for (final path in paths) (path: path, name: p.basename(path))],
+    );
+    return true;
+  }
+
+  return false;
 }

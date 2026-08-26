@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
@@ -9,6 +10,7 @@ import '../format.dart';
 import '../responsive.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
+import 'attachment_add.dart';
 import 'attachment_section.dart';
 import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
@@ -74,7 +76,22 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
     final compact = isCompact(context);
 
-    return Dialog(
+    // Ctrl/Cmd+V：**一个键，两种意思**。
+    //
+    // 判断依据是剪贴板里装的是什么，不是光标在哪：剪贴板有图片就加成附件，
+    // 没有就把粘贴原样还给输入框去粘文字。在正文里打字时按 Ctrl+V 想粘的
+    // 是文字，这条不能被破坏。
+    //
+    // 这里能拦到，是因为 Flutter 内置的文字粘贴快捷键挂在应用根部，层级比
+    // 这个弹窗更外——快捷键从焦点往外找，先撞上我们这一层。
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): _onPaste,
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _onPaste,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Dialog(
       backgroundColor: theme.colorScheme.surface,
       insetPadding: EdgeInsets.all(compact ? 12 : 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -125,7 +142,31 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
           ),
         ),
       ),
+      ),
+      ),
     );
+  }
+
+  /// 处理一次 Ctrl/Cmd+V。
+  Future<void> _onPaste() async {
+    final handled = await pasteAttachment(
+      ref,
+      boardId: widget.boardId,
+      cardId: widget.cardId,
+    );
+    if (handled) return;
+
+    if (!mounted) return;
+
+    // 剪贴板里不是图片也不是文件——把粘贴动作还给当前聚焦的输入框，
+    // 否则在正文里按 Ctrl+V 会变成什么都不发生。
+    final focused = primaryFocus?.context;
+    if (focused != null && focused.mounted) {
+      Actions.maybeInvoke(
+        focused,
+        const PasteTextIntent(SelectionChangedCause.keyboard),
+      );
+    }
   }
 
   Widget _header(ThemeData theme, KanbanColors k, CardRow card) {

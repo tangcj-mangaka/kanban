@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:pasteboard/pasteboard.dart';
-import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
@@ -56,15 +54,6 @@ class _AttachmentSectionState extends ConsumerState<AttachmentSection> {
               Expanded(child: Divider(color: k.hairline)),
               const SizedBox(width: 10),
               TextButton.icon(
-                onPressed: _adding ? null : _paste,
-                icon: const Icon(Icons.content_paste, size: 15),
-                label: const Text('粘贴'),
-                style: TextButton.styleFrom(
-                  foregroundColor: k.cardBody,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              TextButton.icon(
                 onPressed: _adding ? null : _add,
                 icon: const Icon(Icons.attach_file, size: 15),
                 label: Text(_adding ? '添加中…' : '添加'),
@@ -106,51 +95,6 @@ class _AttachmentSectionState extends ConsumerState<AttachmentSection> {
         cardId: widget.cardId,
         files: [for (final f in files) (path: f.path, name: f.name)],
       );
-    } finally {
-      if (mounted) setState(() => _adding = false);
-    }
-  }
-
-  /// 把剪贴板里的图片直接加成附件。
-  ///
-  /// 从聊天工具复制一张图，回到卡片点一下就进来了，不用先另存到磁盘
-  /// 再走「添加」——那是这个功能存在的全部理由。
-  ///
-  /// 也认「在资源管理器里复制的文件」：那种情况剪贴板里是路径不是图像。
-  Future<void> _paste() async {
-    setState(() => _adding = true);
-    try {
-      final image = await Pasteboard.image;
-      if (image != null && image.isNotEmpty) {
-        await addAttachmentBytes(
-          ref,
-          boardId: widget.boardId,
-          cardId: widget.cardId,
-          bytes: image,
-        );
-        return;
-      }
-
-      final paths = await Pasteboard.files();
-      if (paths.isNotEmpty) {
-        await addAttachmentFiles(
-          ref,
-          boardId: widget.boardId,
-          cardId: widget.cardId,
-          files: [for (final path in paths) (path: path, name: p.basename(path))],
-        );
-        return;
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('剪贴板里没有图片或文件'),
-            behavior: SnackBarBehavior.floating,
-            width: 300,
-          ),
-        );
-      }
     } finally {
       if (mounted) setState(() => _adding = false);
     }

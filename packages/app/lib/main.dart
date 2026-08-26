@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,12 +16,33 @@ import 'ui/theme/app_theme.dart';
 
 Future<void> main() => runKanbanApp(const KanbanApp());
 
+/// 拿 Navigator 用来响应鼠标侧键。
+///
+/// 需要一个全局 key 是因为处理器挂在 [MaterialApp.builder] 里——那一层
+/// 在 Navigator 之外，拿不到它的 context。挂在外面又是必须的：只有这样
+/// 才能盖住所有页面**和弹窗**。
+final _navigatorKey = GlobalKey<NavigatorState>();
+
 class KanbanApp extends ConsumerWidget {
   const KanbanApp({super.key});
+
+  /// 鼠标侧键（后退）：**一步退回看板列表**。
+  ///
+  /// 不是「退一层」。用户明确要的是一步到位——开着卡片详情、开着改动记录，
+  /// 按一下就回到总览，不用连按好几次。
+  void _onPointer(PointerDownEvent event) {
+    if (event.buttons & kBackMouseButton == 0) return;
+    // 看板列表是第一个路由，popUntil 会顺带把途中的弹窗一起关掉。
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
+      // builder 包住的是整个 Navigator，所以弹窗上的侧键也接得到。
+      builder: (context, child) =>
+          Listener(onPointerDown: _onPointer, child: child!),
       title: '驴看板',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
