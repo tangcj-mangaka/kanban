@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
@@ -9,6 +12,7 @@ import '../format.dart';
 import '../responsive.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
+import 'attachment_add.dart';
 import 'attachment_section.dart';
 import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
@@ -74,7 +78,10 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
     final compact = isCompact(context);
 
-    return Dialog(
+    return _DropZone(
+      boardId: widget.boardId,
+      cardId: widget.cardId,
+      child: Dialog(
       backgroundColor: theme.colorScheme.surface,
       insetPadding: EdgeInsets.all(compact ? 12 : 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -124,6 +131,7 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
           ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -453,6 +461,95 @@ class _CommentTile extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 把文件直接拖进卡片详情就成为附件。
+///
+/// **桌面专用**——手机上没有「把文件拖进窗口」这个动作，那边靠系统分享
+/// 面板。在安卓/iOS 上这个组件原样返回子组件，不做任何事。
+///
+/// 拖动过程中压一层提示，否则用户不知道松手会发生什么。
+class _DropZone extends ConsumerStatefulWidget {
+  final String boardId;
+  final String cardId;
+  final Widget child;
+
+  const _DropZone({
+    required this.boardId,
+    required this.cardId,
+    required this.child,
+  });
+
+  @override
+  ConsumerState<_DropZone> createState() => _DropZoneState();
+}
+
+class _DropZoneState extends ConsumerState<_DropZone> {
+  bool _hovering = false;
+
+  static bool get _supported =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_supported) return widget.child;
+
+    final theme = Theme.of(context);
+
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _hovering = true),
+      onDragExited: (_) => setState(() => _hovering = false),
+      onDragDone: (details) async {
+        setState(() => _hovering = false);
+        await addAttachmentFiles(
+          ref,
+          boardId: widget.boardId,
+          cardId: widget.cardId,
+          files: [for (final f in details.files) (path: f.path, name: f.name)],
+        );
+      },
+      child: Stack(
+        children: [
+          widget.child,
+          if (_hovering)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  margin: const EdgeInsets.all(40),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Text(
+                        '松手就加成附件',
+                        style: TextStyle(
+                          color: theme.colorScheme.onPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

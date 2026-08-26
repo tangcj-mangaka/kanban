@@ -53,6 +53,8 @@ dependencies:
   mime: ^2.0.0
   path: ^1.9.1
   share_plus: ^13.3.0
+  pasteboard: ^0.5.0
+  desktop_drop: ^0.8.2
 
 dev_dependencies:
   flutter_test:
