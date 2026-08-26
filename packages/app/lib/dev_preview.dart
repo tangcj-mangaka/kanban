@@ -20,6 +20,7 @@ import 'ui/boards/board_dialogs.dart';
 import 'ui/boards/board_list_page.dart';
 import 'ui/board/board_page.dart';
 import 'ui/card/card_detail_dialog.dart';
+import 'ui/card/attachment_section.dart';
 import 'ui/card/card_history_sheet.dart';
 import 'ui/sync/sync_settings_dialog.dart';
 import 'ui/theme/app_theme.dart';
@@ -178,6 +179,23 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           pickSwatch(context, current: cards.first.color);
+        });
+      } else if (_autoOpen == 'lightbox' && cards != null && cards.isNotEmpty) {
+        _opened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          // 找**任意**一块有图片的看板——第一块板不一定有图，
+          // 而验证灯箱必须真有一张图。
+          //
+          // 直接问仓库而不是读 provider：没人订阅的 provider 用 ref.read
+          // 取到的一直是「加载中」，这里只是个一次性查询。
+          final repo = ref.read(repositoryProvider);
+          for (final b in boards) {
+            final covers = await repo.watchCardCovers(b.board.id).first;
+            if (covers.isNotEmpty && context.mounted) {
+              await showImagePreview(context, covers.values.first);
+              return;
+            }
+          }
         });
       } else if (_autoOpen == 'history' && cards != null && cards.isNotEmpty) {
         // 优先挑有并发冲突的那张——验证的就是冲突提示，挑一张没冲突的

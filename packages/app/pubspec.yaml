@@ -52,6 +52,7 @@ dependencies:
   file_selector: ^1.1.0
   mime: ^2.0.0
   path: ^1.9.1
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

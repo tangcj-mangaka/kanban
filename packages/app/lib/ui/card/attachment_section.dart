@@ -10,6 +10,7 @@ import '../../providers.dart';
 import '../format.dart';
 import '../attachment_image.dart';
 import '../theme/app_theme.dart';
+import 'attachment_save.dart';
 
 /// 卡片详情里的附件区。
 class AttachmentSection extends ConsumerStatefulWidget {
@@ -227,17 +228,8 @@ class _AttachmentTile extends ConsumerWidget {
     }
 
     // 非图片就让用户存到自己想放的地方——应用没法替所有类型的文件
-    // 决定用什么打开。
-    final bytes = await ref
-        .read(attachmentSyncerProvider)
-        .fetch(attachment.hash);
-    if (bytes == null) {
-      if (context.mounted) _showUnavailable(context);
-      return;
-    }
-    final location = await getSaveLocation(suggestedName: attachment.filename);
-    if (location == null) return;
-    await File(location.path).writeAsBytes(bytes);
+    // 决定用什么打开。安卓上没有另存为对话框，走分享面板，见 saveAttachment。
+    await saveAttachment(context, ref, attachment);
   }
 
   static IconData _iconFor(String mime) {
@@ -288,13 +280,22 @@ class _PendingBadge extends ConsumerWidget {
 /// 按哈希取图并显示。
 ///
 
-class _ImagePreview extends StatelessWidget {
+/// 打开图片灯箱。公开出来是为了截图验证能直达这一屏——
+/// 否则得先点开卡片详情、再点缩略图，自动化里点不了。
+Future<void> showImagePreview(BuildContext context, AttachmentRow attachment) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _ImagePreview(attachment: attachment),
+  );
+}
+
+class _ImagePreview extends ConsumerWidget {
   final AttachmentRow attachment;
 
   const _ImagePreview({required this.attachment});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final screen = MediaQuery.sizeOf(context);
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -317,9 +318,34 @@ class _ImagePreview extends StatelessWidget {
               color: Colors.black.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
-              '${attachment.filename}　${humanBytes(attachment.size)}',
-              style: const TextStyle(color: Colors.white, fontSize: 12.5),
+            // 限宽 + 省略号：文件名可能很长（尤其是从聊天工具存下来的图，
+            // 名字动辄几十个字符），不约束的话这一行会直接撑破弹窗。
+            constraints: BoxConstraints(maxWidth: screen.width * 0.85),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    '${attachment.filename}　${humanBytes(attachment.size)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 图片原来只能看不能存——灯箱里压根没有这个按钮，
+                // 而文档那条路是有另存为的。
+                TextButton.icon(
+                  onPressed: () => saveAttachment(context, ref, attachment),
+                  icon: const Icon(Icons.download, size: 16),
+                  label: Text(_saveLabel),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -328,12 +354,6 @@ class _ImagePreview extends StatelessWidget {
   }
 }
 
-void _showUnavailable(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('这个文件本机还没有，服务端也连不上'),
-      behavior: SnackBarBehavior.floating,
-      width: 340,
-    ),
-  );
-}
+/// 安卓上走的是分享面板，说「保存」会让人以为直接存好了。
+String get _saveLabel =>
+    Platform.isAndroid || Platform.isIOS ? '保存 / 分享' : '下载';
