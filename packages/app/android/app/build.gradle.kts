@@ -23,7 +23,10 @@ val hasReleaseKey = keystorePropertiesFile.exists()
 
 android {
     namespace = "com.tangcj.kanban"
-    compileSdk = flutter.compileSdkVersion
+    // receive_sharing_intent（系统分享面板接收）要求 37。
+    // AGP 9.0.1 建议上限是 36，只是建议——编译期 API 级别提高不影响运行时
+    // 行为，运行时看的是 targetSdk，那个仍由 Flutter 决定。
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
