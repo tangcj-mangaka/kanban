@@ -243,6 +243,8 @@ class CanvasCard extends ConsumerWidget {
           const PopupMenuItem(value: 'color', child: Text('改颜色')),
           const PopupMenuItem(value: 'tags', child: Text('标签')),
           const PopupMenuDivider(),
+          const PopupMenuItem(value: 'move', child: Text('搬到别的看板…')),
+          const PopupMenuDivider(),
           const PopupMenuItem(value: 'archive', child: Text('收进干草仓库')),
           const PopupMenuItem(value: 'delete', child: Text('删除')),
         ],

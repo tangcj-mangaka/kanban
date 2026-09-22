@@ -8,6 +8,7 @@ import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
 import '../card/due_badge.dart';
+import '../card/move_card_dialog.dart';
 import '../tags/card_tag_picker.dart';
 import '../responsive.dart';
 import '../attachment_image.dart';
@@ -545,6 +546,7 @@ class _GroupedCardTile extends ConsumerWidget {
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'detail', child: Text('打开详情')),
                         PopupMenuItem(value: 'tags', child: Text('改标签')),
+                        PopupMenuItem(value: 'move', child: Text('搬到别的看板…')),
                         PopupMenuDivider(),
                         PopupMenuItem(value: 'archive', child: Text('收进干草仓库')),
                       ],
@@ -658,6 +660,8 @@ class _GroupedCardTile extends ConsumerWidget {
         await showCardDetail(context, boardId, card.id);
       case 'tags':
         await showCardTagPicker(context, ref, boardId, card.id);
+      case 'move':
+        await moveCardFrom(context, ref, cardId: card.id, boardId: boardId);
       case 'archive':
         await ref.read(repositoryProvider).archiveCard(boardId, card.id);
     }

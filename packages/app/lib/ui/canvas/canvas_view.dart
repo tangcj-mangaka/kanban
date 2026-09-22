@@ -13,6 +13,7 @@ import '../board/done_filter_button.dart';
 import '../boards/board_dialogs.dart';
 import '../empty_state.dart';
 import '../card/card_detail_dialog.dart';
+import '../card/move_card_dialog.dart';
 import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
 import 'canvas_card.dart';
@@ -697,11 +698,23 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
       case 'tags':
         if (!mounted) return;
         await showCardTagPicker(context, ref, widget.boardId, card.id);
+      case 'move':
+        await _moveCard(card);
       case 'archive':
         await repo.archiveCard(widget.boardId, card.id);
       case 'delete':
         await repo.deleteCard(widget.boardId, card.id);
     }
+  }
+
+  Future<void> _moveCard(CardRow card) async {
+    if (!mounted) return;
+    await moveCardFrom(
+      context,
+      ref,
+      cardId: card.id,
+      boardId: widget.boardId,
+    );
   }
 }
 

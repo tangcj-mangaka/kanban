@@ -34,6 +34,12 @@ abstract final class TagF {
 }
 
 abstract final class CardF {
+  /// 卡片属于哪块看板。
+  ///
+  /// 建行时本来就会从 op 上抄一份（见 `_seedColumns`），但只有登记成
+  /// 正经字段，它才**改得动**——搬家就是改这一个字段。
+  static const boardId = 'board_id';
+
   static const title = 'title';
   static const body = 'body';
   static const color = 'color';

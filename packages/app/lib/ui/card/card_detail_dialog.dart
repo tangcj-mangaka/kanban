@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import 'attachment_add.dart';
 import 'attachment_section.dart';
 import 'card_dates.dart';
+import 'move_card_dialog.dart';
 import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
 
@@ -230,6 +231,7 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               child: Text(card.collapsed ? '在画布上展开' : '在画布上折叠'),
             ),
             const PopupMenuItem(value: 'history', child: Text('改动记录')),
+            const PopupMenuItem(value: 'move', child: Text('搬到别的看板…')),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'archive', child: Text('收进干草仓库')),
             const PopupMenuItem(value: 'delete', child: Text('删除卡片')),
@@ -427,6 +429,16 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
         );
       case 'history':
         await showCardHistory(context, widget.boardId, card.id);
+      case 'move':
+        // 搬完必须把这个弹窗关掉：它的 boardId 是打开时传进来的，
+        // 卡片已经不在那块板上了，再在这儿编辑会发出盖着旧看板戳的 op。
+        final moved = await moveCardFrom(
+          context,
+          ref,
+          cardId: card.id,
+          boardId: widget.boardId,
+        );
+        if (moved && mounted) Navigator.pop(context);
       case 'archive':
         await repo.archiveCard(widget.boardId, card.id);
         if (mounted) Navigator.pop(context);

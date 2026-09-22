@@ -43,6 +43,11 @@ class _HistoryDialog extends ConsumerWidget {
     final changes = ref.watch(cardChangesProvider(cardId)).value;
     final names = ref.watch(deviceNamesProvider).value ?? const {};
     final conflicts = ref.watch(cardConflictsProvider(cardId)).value ?? const {};
+    // 搬家记录里存的是看板 id，得翻成名字——一串 uuid 对用户没有意义。
+    final boardNames = <String, String>{
+      for (final b in ref.watch(boardSummariesProvider).value ?? const [])
+        b.board.id: b.board.name,
+    };
     final rows = changes == null ? null : _ordered(changes, conflicts);
 
     return AlertDialog(
@@ -73,6 +78,7 @@ class _HistoryDialog extends ConsumerWidget {
               cardId: cardId,
               change: list[i],
               deviceNames: names,
+              boardNames: boardNames,
               conflicted: conflicts.contains(list[i].field),
             ),
           ),
@@ -113,6 +119,9 @@ class _ChangeRow extends ConsumerWidget {
   final CardChange change;
   final Map<String, String> deviceNames;
 
+  /// 看板 id → 名字。搬家记录里存的是 id。
+  final Map<String, String> boardNames;
+
   /// 这个字段上出过并发改动。
   final bool conflicted;
 
@@ -121,6 +130,7 @@ class _ChangeRow extends ConsumerWidget {
     required this.cardId,
     required this.change,
     required this.deviceNames,
+    required this.boardNames,
     required this.conflicted,
   });
 
@@ -229,12 +239,18 @@ class _ChangeRow extends ConsumerWidget {
     );
   }
 
-  /// 删除和归档不给「恢复」按钮。
+  /// 删除、归档、搬家不给「恢复」按钮。
   ///
-  /// 那两个字段有各自专门的入口（干草仓库的捞回、彻底删除），在这里
-  /// 再放一个含义模糊的「恢复」只会让人搞不清点了会发生什么。
+  /// 前两个有各自专门的入口（干草仓库的捞回、彻底删除），在这里再放一个
+  /// 含义模糊的「恢复」只会让人搞不清点了会发生什么。
+  ///
+  /// 搬家是因为它**不止改了一个字段**：搬的时候还清了标签、换了坐标。
+  /// 只把 board_id 改回去，得到的是一张回了旧板、却没有标签、还落在新板
+  /// 坐标上的卡片——那不是「恢复」，是第三种状态。想搬回去就再搬一次。
   bool get _restorable =>
-      change.field != kDeleted && change.field != CardF.archived;
+      change.field != kDeleted &&
+      change.field != CardF.archived &&
+      change.field != CardF.boardId;
 
   String _deviceLabel() {
     final name = deviceNames[change.deviceId];
@@ -254,6 +270,7 @@ class _ChangeRow extends ConsumerWidget {
     CardF.archived => '归档状态',
     CardF.start => '开始时间',
     CardF.due => '截止时间',
+    CardF.boardId => '所属看板',
     kDeleted => '删除状态',
     _ => field,
   };
@@ -271,6 +288,13 @@ class _ChangeRow extends ConsumerWidget {
       if (value is num) {
         return formatDueDate(value.toInt(), DateTime.now());
       }
+    }
+
+    // 搬家存的是看板 id。板可能已经被删了，那就退回显示 id——
+    // 总比显示「未知」强，至少还能对得上号。
+    if (change.field == CardF.boardId) {
+      final name = boardNames['$value'];
+      if (name != null) return name.isEmpty ? '未命名看板' : name;
     }
     return switch (value) {
       null => '（清空）',

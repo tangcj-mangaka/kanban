@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -82,6 +82,13 @@ class AppDatabase extends _$AppDatabase {
         await _replayField(Entity.card, CardF.start);
         await _replayField(Entity.card, CardF.due);
       }
+      // v7：卡片可以搬到别的看板了。
+      //
+      // **不加列**——board_id 这一列一直都在，变的是它从「建行时抄一份
+      // 就再也不动」变成了一个可改的字段。但重放还是要做：升级前从别的
+      // 设备收到的搬家 op，当时被当成未知字段跳过了，不补一下，这台设备
+      // 上那张卡片会永远停在旧看板里。
+      if (from < 7) await _replayField(Entity.card, CardF.boardId);
     },
   );
 
@@ -159,6 +166,7 @@ class AppDatabase extends _$AppDatabase {
       TagF.deleted: tags.deleted,
     },
     Entity.card: {
+      CardF.boardId: cards.boardId,
       CardF.title: cards.title,
       CardF.body: cards.body,
       CardF.color: cards.color,

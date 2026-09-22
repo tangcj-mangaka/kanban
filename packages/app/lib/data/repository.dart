@@ -610,6 +610,82 @@ class Repository {
     );
   }
 
+  /// 把一张卡片搬到另一块看板，**并清空它身上所有标签**。
+  ///
+  /// 标签是属于看板的：搬过去之后那些标签在新板上根本不存在，留着只会是
+  /// 一堆对不上号的关系。所以一并打上墓碑，到了新板自己重新打。
+  ///
+  /// 附件和评论挂的是 cardId，跟着卡片自动就过去了，不用管。
+  ///
+  /// **不是删了重建。** 重建会丢掉整条改动历史，而且卡片换了 id 之后，
+  /// 别的设备上还没同步过来的、针对这张卡的改动会落到一个不存在的卡上。
+  /// 搬家只改 `board_id` 一个字段，op log 完整保留。
+  ///
+  /// 返回清掉了几个标签，给界面提示用。
+  Future<int> moveCardToBoard({
+    required String cardId,
+    required String fromBoardId,
+    required String toBoardId,
+  }) async {
+    if (fromBoardId == toBoardId) return 0;
+
+    // 落在目标看板所有卡片的下面，和「在列底新建卡片」同一个规矩。
+    // 保留原坐标的话，卡片可能正好压在新板已有的卡片上，也可能落在很远的
+    // 空白处——搬过去却找不着，比排队难看更糟。
+    final landing = await (db.select(db.cards)..where(
+          (c) =>
+              c.boardId.equals(toBoardId) &
+              c.deleted.equals(false) &
+              c.archived.equals(false),
+        ))
+        .get();
+    final y = landing.isEmpty
+        ? 40.0
+        : landing.map((c) => c.y).reduce((a, b) => a > b ? a : b) + 170;
+    final z = landing.isEmpty
+        ? 1.0
+        : landing.map((c) => c.z).reduce((a, b) => a > b ? a : b) + 1;
+
+    final relations = await (db.select(db.cardTags)..where(
+          (r) => r.cardId.equals(cardId) & r.deleted.equals(false),
+        ))
+        .get();
+
+    await db.transaction(() async {
+      // 卡片自己的 op 一律盖**新看板**的戳：op 上的 boardId 决定了一台还
+      // 没见过这张卡的设备在建行时把它放进哪块板，写新板才是对的终态。
+      for (final change in [
+        (CardF.boardId, toBoardId),
+        (CardF.x, 40.0),
+        (CardF.y, y),
+        (CardF.z, z),
+        (CardF.updatedAt, DateTime.now().millisecondsSinceEpoch),
+      ]) {
+        await db.emit(
+          boardId: toBoardId,
+          entity: Entity.card,
+          entityId: cardId,
+          field: change.$1,
+          value: change.$2,
+        );
+      }
+
+      // 标签关系盖**旧看板**的戳——被摘掉的是旧板上的标签，这条记录讲的
+      // 是旧板上发生的事。
+      for (final r in relations) {
+        await db.emit(
+          boardId: fromBoardId,
+          entity: Entity.cardTag,
+          entityId: r.id,
+          field: CardTagF.deleted,
+          value: true,
+        );
+      }
+    });
+
+    return relations.length;
+  }
+
   /// 所有设了截止时间的卡片，只取判断超时要用的那几列。
   ///
   /// 看板列表页要在每块板上标出「有几张超时了」。超时与否取决于「现在
@@ -768,12 +844,20 @@ class Repository {
   /// 只看内容类字段，不看坐标、层级、折叠这些——那些每拖一下就产生一条，
   /// 会把真正有意义的改动淹掉。
   Stream<List<CardChange>> watchCardChanges(String cardId) {
+    // 只收「内容性」的改动。挪位置、调宽度、折叠这些不进来——它们量大、
+    // 又没人回头想看，混进来会把真正的改动淹掉。
+    //
+    // 排期和搬家算内容改动：「这事什么时候截止」「它属于哪块板」都是
+    // 回头会想查的东西。
     const interesting = {
       CardF.title,
       CardF.body,
       CardF.color,
       CardF.done,
       CardF.archived,
+      CardF.start,
+      CardF.due,
+      CardF.boardId,
       kDeleted,
     };
 
