@@ -7,6 +7,7 @@ import '../canvas/canvas_view.dart';
 import '../card/card_detail_dialog.dart';
 import '../grouped/grouped_view.dart';
 import '../haystack/haystack_view.dart';
+import '../timeline/timeline_view.dart';
 import '../tags/tag_manager_panel.dart';
 import '../responsive.dart';
 import '../theme/app_theme.dart';
@@ -17,6 +18,7 @@ import 'done_filter.dart';
 enum BoardView {
   canvas('画布', Icons.dashboard_outlined),
   grouped('分组', Icons.view_column_outlined),
+  timeline('时间轴', Icons.view_timeline_outlined),
   haystack('干草仓库', Icons.inventory_2_outlined);
 
   final String label;
@@ -25,12 +27,13 @@ enum BoardView {
   const BoardView(this.label, this.icon);
 }
 
-/// 一块看板的外壳：顶栏 + 三种视图之间切换。
+/// 一块看板的外壳：顶栏 + 四种视图之间切换。
 ///
-/// 三个视图看的是**同一批卡片**，只是呈现方式不同：
+/// 四个视图看的是**同一批卡片**，只是呈现方式不同：
 /// - 画布：自由摆放，可拖，是唯一的编辑主场
 /// - 分组：按标签自动分列的透视图，不可拖
-/// - 干草仓库：归档区，从前两个视图里彻底消失的卡片
+/// - 时间轴：按截止日期排出来的甘特图，只收排了期的卡片
+/// - 干草仓库：归档区，从前三个视图里彻底消失的卡片
 class BoardPage extends ConsumerStatefulWidget {
   final String boardId;
 
@@ -244,6 +247,8 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   _ViewSwitcher(
                     current: view,
                     archivedCount: archived.length,
+                    overdueCount:
+                        ref.watch(overdueCountsProvider)[widget.boardId] ?? 0,
                     compact: compact,
                     onChanged: (v) => setState(() => _view = v),
                   ),
@@ -284,16 +289,21 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     ? -1
                     : matches.indexWhere((c) => c.id == _search.focusCardId),
                 // 干草仓库有自己的搜索框，板内搜索在那儿没有意义。
-                hint: view == BoardView.haystack
-                    ? '干草仓库请用下面那个搜索框'
-                    : '搜索这块板上的卡片',
-                enabled: view != BoardView.haystack,
+                // 干草仓库有自己的搜索框；时间轴是按日期排的，
+                // 在里面高亮某张卡片没有意义。
+                hint: switch (view) {
+                  BoardView.haystack => '干草仓库请用下面那个搜索框',
+                  BoardView.timeline => '时间轴里不搜索，去画布或分组搜',
+                  _ => '搜索这块板上的卡片',
+                },
+                enabled:
+                    view != BoardView.haystack && view != BoardView.timeline,
                 onChanged: (q) => setState(() => _search = _search.withQuery(q.trim())),
                 onStep: _stepMatch,
                 onClose: _closeSearch,
               ),
             Expanded(
-              // 三个视图看的是同一批卡片，切换时交叉淡入比硬切更贴合
+              // 四个视图看的是同一批卡片，切换时交叉淡入比硬切更贴合
               // 「换个角度看同一堆东西」这个意思。
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 180),
@@ -321,6 +331,11 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     BoardView.grouped => GroupedView(
                       boardId: widget.boardId,
                       search: _search,
+                      doneFilter: _doneFilter,
+                      onCycleDoneFilter: _cycleDoneFilter,
+                    ),
+                    BoardView.timeline => TimelineView(
+                      boardId: widget.boardId,
                       doneFilter: _doneFilter,
                       onCycleDoneFilter: _cycleDoneFilter,
                     ),
@@ -443,7 +458,10 @@ class _ViewSwitcher extends StatelessWidget {
   final BoardView current;
   final int archivedCount;
 
-  /// 窄屏只显示图标——三个中文标签在手机上放不下。
+  /// 这块板上有几张超时的卡片。标在时间轴那个页签上。
+  final int overdueCount;
+
+  /// 窄屏只显示图标——四个中文标签在手机上放不下。
   final bool compact;
 
   final ValueChanged<BoardView> onChanged;
@@ -451,6 +469,7 @@ class _ViewSwitcher extends StatelessWidget {
   const _ViewSwitcher({
     required this.current,
     required this.archivedCount,
+    required this.overdueCount,
     required this.compact,
     required this.onChanged,
   });
@@ -475,9 +494,13 @@ class _ViewSwitcher extends StatelessWidget {
               selected: view == current,
               compact: compact,
               // 仓库里有东西时标出条数，省得每次都要点进去看有没有。
-              badge: view == BoardView.haystack && archivedCount > 0
-                  ? '$archivedCount'
-                  : null,
+              // 时间轴上标超时张数，而且标成红的——这是唯一需要立刻看见的数。
+              badge: switch (view) {
+                BoardView.haystack when archivedCount > 0 => '$archivedCount',
+                BoardView.timeline when overdueCount > 0 => '$overdueCount',
+                _ => null,
+              },
+              alarmBadge: view == BoardView.timeline,
               onTap: () => onChanged(view),
             ),
         ],
@@ -491,6 +514,10 @@ class _SwitcherTab extends StatelessWidget {
   final bool selected;
   final bool compact;
   final String? badge;
+
+  /// 这枚角标是催办用的，画成红底白字。
+  final bool alarmBadge;
+
   final VoidCallback onTap;
 
   const _SwitcherTab({
@@ -498,6 +525,7 @@ class _SwitcherTab extends StatelessWidget {
     required this.selected,
     required this.compact,
     required this.badge,
+    required this.alarmBadge,
     required this.onTap,
   });
 
@@ -558,14 +586,17 @@ class _SwitcherTab extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: k.cardBody.withValues(alpha: 0.18),
+                    color: alarmBadge
+                        ? k.overdueStripe
+                        : k.cardBody.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     badge!,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: k.cardBody,
+                      color: alarmBadge ? k.alarmBadgeText : k.cardBody,
                       fontSize: 10,
+                      fontWeight: alarmBadge ? FontWeight.w600 : null,
                     ),
                   ),
                 ),

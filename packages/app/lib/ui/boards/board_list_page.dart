@@ -337,6 +337,7 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
     final surface = k.cardSurface(board.color);
     final accent = k.accent(board.color);
     final compactTile = widget.compact;
+    final overdue = ref.watch(overdueCountsProvider)[board.id] ?? 0;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -415,14 +416,44 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
                     ),
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
-                    child: Text(
-                      widget.summary.cardCount == 0
-                          ? '空看板'
-                          : '${widget.summary.cardCount} 张卡片',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: k.cardBody,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: Row(
+                      children: [
+                        Text(
+                          widget.summary.cardCount == 0
+                              ? '空看板'
+                              : '${widget.summary.cardCount} 张卡片',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: k.cardBody,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        // 超时张数标在列表页上，不然得逐块点进去才知道
+                        // 哪块板火烧眉毛了。
+                        if (overdue > 0) ...[
+                          const SizedBox(width: 7),
+                          Tooltip(
+                            message: '$overdue 张卡片超时了',
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: k.overdueStripe,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '超时 $overdue',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: k.alarmBadgeText,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   const SizedBox(height: 2),

@@ -28,6 +28,22 @@ class BoardSummary {
   });
 }
 
+/// 一张排过期的卡片，只带判断超时要用的那几列。
+@immutable
+class DueCard {
+  final String cardId;
+  final String boardId;
+  final int due;
+  final bool done;
+
+  const DueCard({
+    required this.cardId,
+    required this.boardId,
+    required this.due,
+    required this.done,
+  });
+}
+
 /// 卡片上的一次改动。
 @immutable
 class CardChange {
@@ -574,6 +590,55 @@ class Repository {
   /// 往上跳。和挪位置、折叠是一类操作。
   Future<void> toggleCardDone(String boardId, String cardId, bool done) =>
       setCardField(boardId, cardId, CardF.done, done, touch: false);
+
+  /// 改卡片的开始时间或截止时间。传 null 表示清除。
+  ///
+  /// [touch] 默认为真：改排期是实打实的内容改动，该让卡片在「最近修改」
+  /// 里往上跳——和挪位置那类纯视觉操作不一样。
+  Future<void> setCardDate(
+    String boardId,
+    String cardId,
+    String field,
+    DateTime? at,
+  ) {
+    assert(field == CardF.start || field == CardF.due);
+    return setCardField(
+      boardId,
+      cardId,
+      field,
+      at?.millisecondsSinceEpoch,
+    );
+  }
+
+  /// 所有设了截止时间的卡片，只取判断超时要用的那几列。
+  ///
+  /// 看板列表页要在每块板上标出「有几张超时了」。超时与否取决于「现在
+  /// 几点」，没法固化进 SQL——一条 `due < 1758...` 的查询在下一分钟就过期了。
+  ///
+  /// 所以这里只流式取出**排过期的卡片**（通常没几张），让调用方拿当前
+  /// 时间在内存里算。每分钟重算一遍一个小列表，比每分钟重建一次数据库
+  /// 查询流便宜得多，也不会让界面闪。
+  Stream<List<DueCard>> watchDueCards() {
+    final query = db.select(db.cards)
+      ..where(
+        (c) =>
+            c.deleted.equals(false) &
+            c.archived.equals(false) &
+            c.due.isNotNull(),
+      );
+
+    return query.watch().map(
+      (rows) => [
+        for (final r in rows)
+          DueCard(
+            cardId: r.id,
+            boardId: r.boardId,
+            due: r.due!,
+            done: r.done,
+          ),
+      ],
+    );
+  }
 
   Future<void> setCardTag(
     String boardId,

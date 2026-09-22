@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -74,6 +74,13 @@ class AppDatabase extends _$AppDatabase {
         // 升级前收到过的 done op 当时被当成未知字段跳过了（那会儿还没这一列）。
         // 不补这一下，别的设备上勾好的卡片在这台上会永远是没勾的。
         await _replayField(Entity.card, CardF.done);
+      }
+      // v6：卡片加了开始时间和截止时间。同样要补放升级前收到过的那些 op。
+      if (from < 6) {
+        await m.addColumn(cards, cards.start);
+        await m.addColumn(cards, cards.due);
+        await _replayField(Entity.card, CardF.start);
+        await _replayField(Entity.card, CardF.due);
       }
     },
   );
@@ -162,6 +169,8 @@ class AppDatabase extends _$AppDatabase {
       CardF.collapsed: cards.collapsed,
       CardF.done: cards.done,
       CardF.archived: cards.archived,
+      CardF.start: cards.start,
+      CardF.due: cards.due,
       CardF.createdAt: cards.createdAt,
       CardF.updatedAt: cards.updatedAt,
       CardF.deleted: cards.deleted,

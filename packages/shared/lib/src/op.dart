@@ -47,6 +47,14 @@ abstract final class CardF {
   /// 什么时候收进干草仓库由用户自己决定。
   static const done = 'done';
   static const archived = 'archived';
+
+  /// 计划开始时间与截止时间，毫秒时间戳，可为 null。
+  ///
+  /// 两个**独立字段**，各自 LWW：一端改开始、另一端同时改截止，两边都留得住。
+  /// 合成一个「日期区间」对象的话，后写的那次会把对方整个盖掉。
+  static const start = 'start';
+  static const due = 'due';
+
   static const createdAt = 'created_at';
   static const updatedAt = 'updated_at';
   static const deleted = kDeleted;

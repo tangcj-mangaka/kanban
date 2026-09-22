@@ -1926,6 +1926,24 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _startMeta = const VerificationMeta('start');
+  @override
+  late final GeneratedColumn<int> start = GeneratedColumn<int>(
+    'start',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dueMeta = const VerificationMeta('due');
+  @override
+  late final GeneratedColumn<int> due = GeneratedColumn<int>(
+    'due',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1979,6 +1997,8 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     collapsed,
     done,
     archived,
+    start,
+    due,
     createdAt,
     updatedAt,
     deleted,
@@ -2059,6 +2079,18 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         archived.isAcceptableOrUnknown(data['archived']!, _archivedMeta),
       );
     }
+    if (data.containsKey('start')) {
+      context.handle(
+        _startMeta,
+        start.isAcceptableOrUnknown(data['start']!, _startMeta),
+      );
+    }
+    if (data.containsKey('due')) {
+      context.handle(
+        _dueMeta,
+        due.isAcceptableOrUnknown(data['due']!, _dueMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2134,6 +2166,14 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}archived'],
       )!,
+      start: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start'],
+      ),
+      due: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}due'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -2184,6 +2224,15 @@ class CardRow extends DataClass implements Insertable<CardRow> {
 
   /// 是否已收进干草仓库。归档的卡片从画布和分组视图里彻底消失。
   final bool archived;
+
+  /// 计划开始时间，毫秒时间戳。没排期就是 null。
+  final int? start;
+
+  /// 截止时间，毫秒时间戳。没截止就是 null。
+  ///
+  /// 超时变红、进时间轴，都以它为准。**它是进时间轴的门槛**——
+  /// 只有开始时间没有截止时间的卡片，谈不上「进度」。
+  final int? due;
   final int createdAt;
   final int updatedAt;
   final bool deleted;
@@ -2200,6 +2249,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     required this.collapsed,
     required this.done,
     required this.archived,
+    this.start,
+    this.due,
     required this.createdAt,
     required this.updatedAt,
     required this.deleted,
@@ -2221,6 +2272,12 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     map['collapsed'] = Variable<bool>(collapsed);
     map['done'] = Variable<bool>(done);
     map['archived'] = Variable<bool>(archived);
+    if (!nullToAbsent || start != null) {
+      map['start'] = Variable<int>(start);
+    }
+    if (!nullToAbsent || due != null) {
+      map['due'] = Variable<int>(due);
+    }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     map['deleted'] = Variable<bool>(deleted);
@@ -2243,6 +2300,10 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       collapsed: Value(collapsed),
       done: Value(done),
       archived: Value(archived),
+      start: start == null && nullToAbsent
+          ? const Value.absent()
+          : Value(start),
+      due: due == null && nullToAbsent ? const Value.absent() : Value(due),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deleted: Value(deleted),
@@ -2267,6 +2328,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       collapsed: serializer.fromJson<bool>(json['collapsed']),
       done: serializer.fromJson<bool>(json['done']),
       archived: serializer.fromJson<bool>(json['archived']),
+      start: serializer.fromJson<int?>(json['start']),
+      due: serializer.fromJson<int?>(json['due']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deleted: serializer.fromJson<bool>(json['deleted']),
@@ -2288,6 +2351,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       'collapsed': serializer.toJson<bool>(collapsed),
       'done': serializer.toJson<bool>(done),
       'archived': serializer.toJson<bool>(archived),
+      'start': serializer.toJson<int?>(start),
+      'due': serializer.toJson<int?>(due),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deleted': serializer.toJson<bool>(deleted),
@@ -2307,6 +2372,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     bool? collapsed,
     bool? done,
     bool? archived,
+    Value<int?> start = const Value.absent(),
+    Value<int?> due = const Value.absent(),
     int? createdAt,
     int? updatedAt,
     bool? deleted,
@@ -2323,6 +2390,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     collapsed: collapsed ?? this.collapsed,
     done: done ?? this.done,
     archived: archived ?? this.archived,
+    start: start.present ? start.value : this.start,
+    due: due.present ? due.value : this.due,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deleted: deleted ?? this.deleted,
@@ -2341,6 +2410,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       collapsed: data.collapsed.present ? data.collapsed.value : this.collapsed,
       done: data.done.present ? data.done.value : this.done,
       archived: data.archived.present ? data.archived.value : this.archived,
+      start: data.start.present ? data.start.value : this.start,
+      due: data.due.present ? data.due.value : this.due,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deleted: data.deleted.present ? data.deleted.value : this.deleted,
@@ -2362,6 +2433,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           ..write('collapsed: $collapsed, ')
           ..write('done: $done, ')
           ..write('archived: $archived, ')
+          ..write('start: $start, ')
+          ..write('due: $due, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deleted: $deleted')
@@ -2383,6 +2456,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     collapsed,
     done,
     archived,
+    start,
+    due,
     createdAt,
     updatedAt,
     deleted,
@@ -2403,6 +2478,8 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           other.collapsed == this.collapsed &&
           other.done == this.done &&
           other.archived == this.archived &&
+          other.start == this.start &&
+          other.due == this.due &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deleted == this.deleted);
@@ -2421,6 +2498,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
   final Value<bool> collapsed;
   final Value<bool> done;
   final Value<bool> archived;
+  final Value<int?> start;
+  final Value<int?> due;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<bool> deleted;
@@ -2438,6 +2517,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.collapsed = const Value.absent(),
     this.done = const Value.absent(),
     this.archived = const Value.absent(),
+    this.start = const Value.absent(),
+    this.due = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deleted = const Value.absent(),
@@ -2456,6 +2537,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.collapsed = const Value.absent(),
     this.done = const Value.absent(),
     this.archived = const Value.absent(),
+    this.start = const Value.absent(),
+    this.due = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deleted = const Value.absent(),
@@ -2475,6 +2558,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Expression<bool>? collapsed,
     Expression<bool>? done,
     Expression<bool>? archived,
+    Expression<int>? start,
+    Expression<int>? due,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<bool>? deleted,
@@ -2493,6 +2578,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       if (collapsed != null) 'collapsed': collapsed,
       if (done != null) 'done': done,
       if (archived != null) 'archived': archived,
+      if (start != null) 'start': start,
+      if (due != null) 'due': due,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deleted != null) 'deleted': deleted,
@@ -2513,6 +2600,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Value<bool>? collapsed,
     Value<bool>? done,
     Value<bool>? archived,
+    Value<int?>? start,
+    Value<int?>? due,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<bool>? deleted,
@@ -2531,6 +2620,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       collapsed: collapsed ?? this.collapsed,
       done: done ?? this.done,
       archived: archived ?? this.archived,
+      start: start ?? this.start,
+      due: due ?? this.due,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
@@ -2577,6 +2668,12 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     if (archived.present) {
       map['archived'] = Variable<bool>(archived.value);
     }
+    if (start.present) {
+      map['start'] = Variable<int>(start.value);
+    }
+    if (due.present) {
+      map['due'] = Variable<int>(due.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -2607,6 +2704,8 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
           ..write('collapsed: $collapsed, ')
           ..write('done: $done, ')
           ..write('archived: $archived, ')
+          ..write('start: $start, ')
+          ..write('due: $due, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deleted: $deleted, ')
@@ -5669,6 +5768,8 @@ typedef $$CardsTableCreateCompanionBuilder =
       Value<bool> collapsed,
       Value<bool> done,
       Value<bool> archived,
+      Value<int?> start,
+      Value<int?> due,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<bool> deleted,
@@ -5688,6 +5789,8 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<bool> collapsed,
       Value<bool> done,
       Value<bool> archived,
+      Value<int?> start,
+      Value<int?> due,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<bool> deleted,
@@ -5759,6 +5862,16 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<bool> get archived => $composableBuilder(
     column: $table.archived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get start => $composableBuilder(
+    column: $table.start,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get due => $composableBuilder(
+    column: $table.due,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5847,6 +5960,16 @@ class $$CardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get start => $composableBuilder(
+    column: $table.start,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get due => $composableBuilder(
+    column: $table.due,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -5908,6 +6031,12 @@ class $$CardsTableAnnotationComposer
   GeneratedColumn<bool> get archived =>
       $composableBuilder(column: $table.archived, builder: (column) => column);
 
+  GeneratedColumn<int> get start =>
+      $composableBuilder(column: $table.start, builder: (column) => column);
+
+  GeneratedColumn<int> get due =>
+      $composableBuilder(column: $table.due, builder: (column) => column);
+
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -5958,6 +6087,8 @@ class $$CardsTableTableManager
                 Value<bool> collapsed = const Value.absent(),
                 Value<bool> done = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
+                Value<int?> start = const Value.absent(),
+                Value<int?> due = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
@@ -5975,6 +6106,8 @@ class $$CardsTableTableManager
                 collapsed: collapsed,
                 done: done,
                 archived: archived,
+                start: start,
+                due: due,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deleted: deleted,
@@ -5994,6 +6127,8 @@ class $$CardsTableTableManager
                 Value<bool> collapsed = const Value.absent(),
                 Value<bool> done = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
+                Value<int?> start = const Value.absent(),
+                Value<int?> due = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
@@ -6011,6 +6146,8 @@ class $$CardsTableTableManager
                 collapsed: collapsed,
                 done: done,
                 archived: archived,
+                start: start,
+                due: due,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deleted: deleted,

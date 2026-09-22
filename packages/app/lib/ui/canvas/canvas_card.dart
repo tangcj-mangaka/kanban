@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../providers.dart';
 import '../attachment_image.dart';
+import '../card/due_badge.dart';
 import '../done_box.dart';
 import '../theme/app_theme.dart';
 
@@ -10,7 +13,7 @@ import '../theme/app_theme.dart';
 /// 内部一律用**世界坐标下的尺寸**（不乘缩放）——缩放由外层的 Transform
 /// 统一处理。这样卡片里所有的字号、间距都只写一遍，不用为每个缩放级别
 /// 各调一套。
-class CanvasCard extends StatelessWidget {
+class CanvasCard extends ConsumerWidget {
   final CardRow card;
 
   /// 这张卡片身上的标签，已按板内顺序排好。
@@ -63,9 +66,16 @@ class CanvasCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final k = theme.kanban;
+
+    // 左边那道竖条：完成的绿条和超时的红条占同一个位置，所以一次定死。
+    // 打了勾就不再报警——不然看板上会长期挂着一片「迟到但已完成」的红色，
+    // 警告色本身就失效了。
+    final now = ref.watch(nowProvider).value ?? DateTime.now();
+    final alarm = dueStripeColor(k, cardDeadlineStatus(card, now));
+    final stripe = card.done ? k.doneStripe : alarm;
 
     // 封面图**一直显示**，折叠与否都不影响。
     //
@@ -99,15 +109,15 @@ class CanvasCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(9),
           child: Stack(
             children: [
-              if (card.done)
+              if (stripe != null)
                 Positioned(
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  child: Container(width: 4, color: k.doneStripe),
+                  child: Container(width: 4, color: stripe),
                 ),
               Padding(
-                padding: EdgeInsets.fromLTRB(card.done ? 14 : 12, 10, 8, 10),
+                padding: EdgeInsets.fromLTRB(stripe != null ? 14 : 12, 10, 8, 10),
                 child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -248,7 +258,11 @@ class CanvasCard extends StatelessWidget {
           child: Wrap(
             spacing: 4,
             runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              // 排在标签前面：快到期这件事比「它属于哪一类」更该先看见。
+              // 放进 Wrap 而不是 Row，窄卡片上才会自己折行而不是溢出。
+              if (card.due != null) DueBadge(card: card),
               for (final tag in tags)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),

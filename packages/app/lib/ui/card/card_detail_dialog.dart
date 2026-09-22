@@ -12,6 +12,7 @@ import '../tags/card_tag_picker.dart';
 import '../theme/app_theme.dart';
 import 'attachment_add.dart';
 import 'attachment_section.dart';
+import 'card_dates.dart';
 import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
 
@@ -107,7 +108,9 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               _header(theme, k, card),
               const SizedBox(height: 3),
               _meta(theme, k, card),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+              CardDates(boardId: widget.boardId, card: card),
+              const SizedBox(height: 12),
               _tagRow(theme, k, card),
               const SizedBox(height: 16),
               // 正文跟着内容长高，整体可滚动。

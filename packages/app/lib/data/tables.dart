@@ -152,6 +152,15 @@ class Cards extends Table {
   /// 是否已收进干草仓库。归档的卡片从画布和分组视图里彻底消失。
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 
+  /// 计划开始时间，毫秒时间戳。没排期就是 null。
+  IntColumn get start => integer().nullable()();
+
+  /// 截止时间，毫秒时间戳。没截止就是 null。
+  ///
+  /// 超时变红、进时间轴，都以它为准。**它是进时间轴的门槛**——
+  /// 只有开始时间没有截止时间的卡片，谈不上「进度」。
+  IntColumn get due => integer().nullable()();
+
   IntColumn get createdAt => integer().withDefault(const Constant(0))();
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();

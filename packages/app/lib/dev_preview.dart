@@ -85,7 +85,7 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
 /// 弹窗藏在两次点击之后，截图验证时没法自动点。
 const _autoOpen = String.fromEnvironment('OPEN');
 
-/// `--dart-define=VIEW=grouped|haystack` 时直接停在那个视图。
+/// `--dart-define=VIEW=grouped|timeline|haystack` 时直接停在那个视图。
 const _initialView = String.fromEnvironment('VIEW');
 
 /// `--dart-define=SYNC_HOST=... --dart-define=SYNC_CODE=...` 时启动即配对。
@@ -230,6 +230,7 @@ class _FirstBoardCanvasState extends ConsumerState<_FirstBoardCanvas> {
       initialView: switch (_initialView) {
         'grouped' => BoardView.grouped,
         'haystack' => BoardView.haystack,
+        'timeline' => BoardView.timeline,
         'canvas' => BoardView.canvas,
         _ => null,
       },

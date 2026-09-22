@@ -7,6 +7,7 @@ import '../board/done_filter_button.dart';
 import '../../data/database.dart';
 import '../../providers.dart';
 import '../card/card_detail_dialog.dart';
+import '../card/due_badge.dart';
 import '../tags/card_tag_picker.dart';
 import '../responsive.dart';
 import '../attachment_image.dart';
@@ -20,7 +21,8 @@ enum GroupSort {
   updated('最近修改'),
   created('创建时间'),
   position('画布位置'),
-  title('标题');
+  title('标题'),
+  due('截止日期');
 
   final String label;
 
@@ -272,6 +274,14 @@ class _GroupedViewState extends ConsumerState<GroupedView> {
         return dy != 0 ? dy : a.x.compareTo(b.x);
       },
       GroupSort.title => (a, b) => a.title.compareTo(b.title),
+      // 最紧的排最上面；没排期的一律沉底，不然「没截止」会被当成
+      // 「截止在 1970 年」排到最前面去。
+      GroupSort.due => (a, b) => switch ((a.due, b.due)) {
+        (null, null) => 0,
+        (null, _) => 1,
+        (_, null) => -1,
+        (final x?, final y?) => x.compareTo(y),
+      },
     });
     return list;
   }
@@ -464,6 +474,11 @@ class _GroupedCardTile extends ConsumerWidget {
     // 分组视图里的卡片没有折叠状态，有图就显示。
     final coverHash = cover?.thumbHash ?? cover?.hash;
 
+    final now = ref.watch(nowProvider).value ?? DateTime.now();
+    final stripe = card.done
+        ? k.doneStripe
+        : dueStripeColor(k, cardDeadlineStatus(card, now));
+
     return Material(
       // 和画布上一样：完成的卡片一律淡红色，盖掉本来的颜色。
       color: card.done ? k.doneSurface : k.cardSurface(card.color),
@@ -480,17 +495,16 @@ class _GroupedCardTile extends ConsumerWidget {
             borderRadius: BorderRadius.circular(8),
             child: Stack(
               children: [
-                // 和画布上一样的完成色条——同一张卡片在两个视图里
-                // 必须长一个样。
-                if (card.done)
+                // 和画布上一样的色条——同一张卡片在两个视图里必须长一个样。
+                if (stripe != null)
                   Positioned(
                     left: 0,
                     top: 0,
                     bottom: 0,
-                    child: Container(width: 4, color: k.doneStripe),
+                    child: Container(width: 4, color: stripe),
                   ),
                 Padding(
-                  padding: EdgeInsets.fromLTRB(card.done ? 13 : 11, 9, 7, 9),
+                  padding: EdgeInsets.fromLTRB(stripe != null ? 13 : 11, 9, 7, 9),
                   child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -566,7 +580,7 @@ class _GroupedCardTile extends ConsumerWidget {
                   ),
                 ),
               ],
-              if (otherTags.isNotEmpty || commentCount > 0) ...[
+              if (otherTags.isNotEmpty || commentCount > 0 || card.due != null) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -574,7 +588,9 @@ class _GroupedCardTile extends ConsumerWidget {
                       child: Wrap(
                         spacing: 4,
                         runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
+                          if (card.due != null) DueBadge(card: card),
                           for (final t in otherTags)
                             Tooltip(
                               message: '这张卡片也在「${t.name}」列里',

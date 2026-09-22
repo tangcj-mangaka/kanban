@@ -57,6 +57,24 @@ class KanbanColors extends ThemeExtension<KanbanColors> {
   Color get doneStripe =>
       isDark ? const Color(0xFF6EDB99) : const Color(0xFF1F7A45);
 
+  /// 超时／临近截止的色条和徽章底色。
+  ///
+  /// 直接取色板里的红和橙的 accent，不另调新色——整体调性才不会脏。
+  ///
+  /// **刻意不改卡片底色。** 色板里本来就有「红」(#FFE0DC)，用户能把卡片
+  /// 涂成红的；超时如果也是淡红底，「我涂的红」和「它超时了」就分不开，
+  /// 等于把一个颜色废掉。竖条的位置和 [doneStripe] 是同一处，天然互斥
+  /// ——做完了就不再报警，两道条不会同时出现。
+  Color get overdueStripe =>
+      isDark ? const Color(0xFFFF9C90) : const Color(0xFFD93A2B);
+
+  Color get dueSoonStripe =>
+      isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A00);
+
+  /// 徽章上的字色。深色主题下的条本身已经很亮，字要用深色才看得清。
+  Color get alarmBadgeText =>
+      isDark ? const Color(0xFF231A16) : const Color(0xFFFFFFFF);
+
   /// 卡片底色。[key] 为 null 表示无色卡片。
   Color cardSurface(String? key) {
     if (key == null) return cardPlain;

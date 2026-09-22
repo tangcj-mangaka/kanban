@@ -100,6 +100,45 @@ final boardSummariesProvider = StreamProvider<List<BoardSummary>>(
   (ref) => ref.watch(repositoryProvider).watchBoardSummaries(),
 );
 
+/// 每分钟走一次的「现在几点」。
+///
+/// 「超时变红」依赖当前时间，而时间会自己往前走：一张卡片在你盯着它的
+/// 时候到期了，界面不主动重绘就不会变色，得切个视图才看得见。
+///
+/// 一分钟一次足够——最小的显示单位就是分钟，再密只是白刷。
+/// 首帧立刻发一次，否则第一分钟内界面上拿不到时间。
+final nowProvider = StreamProvider<DateTime>((ref) async* {
+  yield DateTime.now();
+  yield* Stream.periodic(
+    const Duration(minutes: 1),
+    (_) => DateTime.now(),
+  );
+});
+
+/// 每块看板有几张超时的卡片。
+///
+/// 在内存里算而不是写进 SQL：`due < 现在` 这个条件下一分钟就过期了，
+/// 固化成查询的话得每分钟重建一次数据库流，界面会闪。这里只在
+/// [nowProvider] 跳动时把一个小列表重扫一遍。
+final overdueCountsProvider = Provider<Map<String, int>>((ref) {
+  final cards = ref.watch(dueCardsProvider).value ?? const <DueCard>[];
+  final now = ref.watch(nowProvider).value;
+  if (now == null) return const {};
+
+  final counts = <String, int>{};
+  for (final c in cards) {
+    if (c.done) continue;
+    if (DateTime.fromMillisecondsSinceEpoch(c.due).isAfter(now)) continue;
+    counts.update(c.boardId, (v) => v + 1, ifAbsent: () => 1);
+  }
+  return counts;
+});
+
+/// 所有设了截止时间的卡片。看板列表页的超时角标用。
+final dueCardsProvider = StreamProvider<List<DueCard>>(
+  (ref) => ref.watch(repositoryProvider).watchDueCards(),
+);
+
 /// 某个看板的标签。
 ///
 /// 按板取而不是一次全取：每块看板方块各自订阅自己的那份，
