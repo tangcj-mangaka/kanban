@@ -4,6 +4,7 @@ import 'package:shared/shared.dart';
 
 import '../../data/repository.dart';
 import '../../providers.dart';
+import '../deadline.dart';
 import '../format.dart';
 import '../responsive.dart';
 import '../theme/app_theme.dart';
@@ -251,6 +252,8 @@ class _ChangeRow extends ConsumerWidget {
     CardF.color => '颜色',
     CardF.done => '完成状态',
     CardF.archived => '归档状态',
+    CardF.start => '开始时间',
+    CardF.due => '截止时间',
     kDeleted => '删除状态',
     _ => field,
   };
@@ -261,6 +264,13 @@ class _ChangeRow extends ConsumerWidget {
     if (change.field == CardF.color) {
       if (value == null) return '无色';
       return kSwatchByKey['$value']?.label ?? '$value';
+    }
+
+    // 日期存的是毫秒时间戳，原样显示就是一串 1758556740000。
+    if (change.field == CardF.due || change.field == CardF.start) {
+      if (value is num) {
+        return formatDueDate(value.toInt(), DateTime.now());
+      }
     }
     return switch (value) {
       null => '（清空）',
@@ -345,6 +355,8 @@ class _ConflictBanner extends ConsumerWidget {
           CardF.body => '正文',
           CardF.color => '颜色',
           CardF.done => '完成状态',
+          CardF.start => '开始时间',
+          CardF.due => '截止时间',
           _ => f,
         },
       )
