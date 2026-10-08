@@ -14,6 +14,7 @@ import '../theme/donkey_icon.dart';
 import '../board/board_page.dart';
 import '../sync/sync_status_chip.dart';
 import 'board_dialogs.dart';
+import 'trello_import_dialog.dart';
 
 /// 看板列表页 —— 应用入口。
 class BoardListPage extends ConsumerStatefulWidget {
@@ -139,6 +140,14 @@ class _Header extends ConsumerWidget {
                   ThemeMode.light => Icons.light_mode_outlined,
                   ThemeMode.dark => Icons.dark_mode_outlined,
                 }),
+              ),
+              const SizedBox(width: 4),
+              // 从 Trello 搬家：不是天天用，所以只给一个图标按钮，
+              // 不跟「新建看板」抢位置。
+              IconButton(
+                tooltip: '从 Trello 导入',
+                onPressed: () => showTrelloImport(context),
+                icon: const Icon(Icons.download_outlined),
               ),
               const SizedBox(width: 8),
               // 窄屏放不下文字，只留图标。

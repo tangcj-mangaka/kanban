@@ -23,6 +23,9 @@ import 'ui/card/card_detail_dialog.dart';
 import 'ui/card/attachment_section.dart';
 import 'ui/card/card_history_sheet.dart';
 import 'ui/card/move_card_dialog.dart';
+import 'ui/boards/trello_import_dialog.dart';
+import 'data/trello/trello_export.dart';
+import 'dart:io';
 import 'ui/sync/sync_settings_dialog.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -71,7 +74,9 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       home: _narrow(
-        _globalSearch.isNotEmpty
+        _trelloFile.isNotEmpty
+            ? const _TrelloPreview()
+            : _globalSearch.isNotEmpty
             ? BoardListPage(initialQuery: _globalSearch)
             : _showList
             ? const BoardListPage()
@@ -118,6 +123,11 @@ const _boardIndex = int.fromEnvironment('BOARD_INDEX');
 /// `--dart-define=LIST=true` 时停在看板列表页而不是直接进第一块看板。
 const _showList = bool.fromEnvironment('LIST');
 
+/// `--dart-define=TRELLO=/path/to/export.json` 时直接打开 Trello 导入弹窗。
+///
+/// 选文件走的是系统对话框，截图验证点不动它。
+const _trelloFile = String.fromEnvironment('TRELLO');
+
 /// `--dart-define=WIDTH=420` 时把界面挤成这么宽，用来在电脑上验手机布局。
 ///
 /// 比改原生窗口尺寸靠谱：`isCompact` 看的是 MediaQuery 里的宽度，
@@ -146,6 +156,33 @@ Widget _narrow(Widget child) {
       ),
     ),
   );
+}
+
+/// 读文件、解析、直接开导入弹窗。只给截图验证用。
+class _TrelloPreview extends ConsumerStatefulWidget {
+  const _TrelloPreview();
+
+  @override
+  ConsumerState<_TrelloPreview> createState() => _TrelloPreviewState();
+}
+
+class _TrelloPreviewState extends ConsumerState<_TrelloPreview> {
+  bool _opened = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_opened) {
+      _opened = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final text = await File(_trelloFile).readAsString();
+        final board = parseTrelloExport(text);
+        if (!mounted) return;
+        if (!context.mounted) return;
+        await showTrelloImportFor(context, board);
+      });
+    }
+    return const BoardListPage();
+  }
 }
 
 class _FirstBoardCanvas extends ConsumerStatefulWidget {

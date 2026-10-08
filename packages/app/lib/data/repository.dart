@@ -1013,13 +1013,22 @@ class Repository {
   ///
   /// 评论**只增不改**：发表后不能编辑，想改就删了重发。因此评论天然没有
   /// 冲突，不需要参与 LWW——不存在两端同时修改同一条评论的情况。
-  Future<String> addComment(String boardId, String cardId, String body) async {
+  /// 发一条评论。
+  ///
+  /// [createdAt] 只给导入用：从别处搬进来的评论要保留它原本的时间，
+  /// 否则几年的讨论会全部挤成「刚刚」。正常发表时不传。
+  Future<String> addComment(
+    String boardId,
+    String cardId,
+    String body, {
+    int? createdAt,
+  }) async {
     final id = _uuid.v4();
     await db.transaction(() async {
       for (final change in <(String, Object?)>[
         (CommentF.cardId, cardId),
         (CommentF.body, body),
-        (CommentF.createdAt, DateTime.now().millisecondsSinceEpoch),
+        (CommentF.createdAt, createdAt ?? DateTime.now().millisecondsSinceEpoch),
       ]) {
         await db.emit(
           boardId: boardId,
