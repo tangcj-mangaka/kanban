@@ -106,6 +106,11 @@ class SyncClient {
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _socketSub;
   StreamSubscription<void>? _localOpSub;
+  /// 最近一次连接失败的原因，连不上时显示在同步设置里。
+  ///
+  /// 每次发起连接先清掉：正常断开（服务端关机）不该沿用上一次的错误文字。
+  String? _lastFailure;
+
   Timer? _reconnectTimer;
   Timer? _heartbeat;
   Timer? _flushDebounce;
@@ -152,6 +157,12 @@ class SyncClient {
   /// 封顶是必要的——服务端是随身携带的笔记本，可能一整天都不在，
   /// 无上限退避会让它回来后要等很久才重连上。
   static const _maxBackoff = Duration(seconds: 30);
+
+  /// 连接等多久算失败。
+  ///
+  /// 局域网里连得上的话是毫秒级，8 秒已经很宽松了。宁可早点报「离线」
+  /// 让用户知道，也别挂在「连接中」上装作还有希望。
+  static const _connectTimeout = Duration(seconds: 8);
 
   /// 攒一下再推。用户拖一张卡片会连续产生 x、y 两条 op，
   /// 分两次发是浪费。
@@ -255,15 +266,36 @@ class SyncClient {
     });
   }
 
-  /// 忘掉这台服务器：断开、清掉地址和令牌。
+  /// 忘掉这台服务器：断开、清掉地址、令牌和同步进度。
+  ///
+  /// 进度一定要清：留着它，换一台服务器之后客户端会拿旧服务器的序号去
+  /// 问新服务器要「这之后的改动」，而两边的序号根本不是一个体系，结果是
+  /// 悄悄跳过一大段。
   Future<void> forgetServer() async {
     _host = null;
     _token = null;
     await db.setSetting(SyncKeys.host, null);
     await db.setSetting(SyncKeys.port, null);
     await db.setSetting(SyncKeys.token, null);
+    await db.setSetting(SyncKeys.lastSeq, null);
     await _closeSocket();
     _emit(const SyncState(status: SyncStatus.disabled));
+  }
+
+  /// 把同步进度清零，让服务端从头发一遍。
+  ///
+  /// 用来修「这台设备少了一批看板／卡片」：进度一旦跑到实际收到的位置
+  /// 前面，中间那段就再也不会被发过来，只能重走一次。
+  ///
+  /// **这是安全的**，不会产生重复数据：
+  /// - 收到的 op 按 opId 去重，已经有的直接跳过
+  /// - 没有的按字段级定序规则合并，和第一次收到时走的是同一条路
+  /// - 本机还没推上去的改动原样留在待发队列里，不受影响
+  Future<void> resync() async {
+    await db.setSetting(SyncKeys.lastSeq, null);
+    _reconnectAttempt = 0;
+    await _closeSocket();
+    await _connect();
   }
 
   Future<void> _loadSettings() async {
@@ -296,13 +328,18 @@ class SyncClient {
     _log('连接#$gen 开始 → $_host:$_port'
         '（令牌${_token == null ? '无' : '有'}，配对码${_pairCode ?? '无'}）');
     _reconnectTimer?.cancel();
+    _lastFailure = null;
     _emit(_state.copyWith(status: SyncStatus.connecting, clearError: true));
 
     try {
       final channel = WebSocketChannel.connect(
         Uri.parse('ws://$_host:$_port/sync'),
       );
-      await channel.ready;
+      // **必须有超时。** 对方把包静默丢弃（防火墙 DROP、地址不可达）时，
+      // `ready` 会一直挂着，界面就永远停在「连接中」——它其实早该说
+      // 「离线」了。排查时这条假信息比没信息更糟：用户以为还在努力连，
+      // 实际上什么都没发生。
+      await channel.ready.timeout(_connectTimeout);
       // 等待期间又发起了新连接，这一条已经过期，直接扔掉。
       if (gen != _connectGen) {
         _log('连接#$gen 已过期（当前#$_connectGen），丢弃');
@@ -313,7 +350,7 @@ class SyncClient {
       _handshaken = false;
 
       _socketSub = channel.stream.listen(
-        (raw) => _onRaw(gen, raw),
+        (raw) => _handleMessage(gen, raw),
         onDone: () => _onSocketClosed(gen),
         onError: (_) => _onSocketClosed(gen),
         cancelOnError: true,
@@ -328,10 +365,26 @@ class SyncClient {
           lastSeq: await db.getIntSetting(SyncKeys.lastSeq),
         ),
       );
-    } catch (_) {
-      // 连不上很正常——服务端是台随身携带的笔记本。安静重试，不打扰用户。
+    } on Object catch (e) {
+      // 连不上很正常——服务端是台随身携带的笔记本，不弹窗打扰用户。
+      // 但**原因要留下来**：排查时全靠它。原来这里是 `catch (_)`，
+      // 出问题时界面上一点线索都没有。
+      _log('连接#$gen 失败：$e');
+      _lastFailure = _describe(e);
       _onSocketClosed(gen);
     }
+  }
+
+  /// 把异常翻成用户看得懂的一句话。
+  static String _describe(Object e) {
+    final text = '$e';
+    if (e is TimeoutException) return '连接超时，对方没有响应';
+    if (text.contains('Connection refused')) return '对方拒绝连接，服务端可能没在运行';
+    if (text.contains('No route to host') || text.contains('Network is unreachable')) {
+      return '网络不通，确认两台设备在同一个局域网';
+    }
+    if (text.contains('Connection reset')) return '连接被重置';
+    return '连不上：$text';
   }
 
   void _onSocketClosed(int gen) {
@@ -347,7 +400,11 @@ class SyncClient {
     _handshaken = false;
     if (!_started || _host == null) return;
 
-    _emit(_state.copyWith(status: SyncStatus.offline));
+    _emit(
+      _lastFailure == null
+          ? _state.copyWith(status: SyncStatus.offline, clearError: true)
+          : _state.copyWith(status: SyncStatus.offline, error: _lastFailure),
+    );
     _scheduleReconnect();
   }
 
@@ -378,6 +435,36 @@ class SyncClient {
   // 收消息
   // -------------------------------------------------------------------------
 
+  /// 排队处理收到的消息，**并且把处理器里抛的异常接住**。
+  ///
+  /// 原来这里是 `(raw) => _onRaw(gen, raw)`，返回的 Future 直接丢掉。
+  /// 两个后果都很严重：
+  ///
+  /// 1. `_onRaw` 里抛异常不会触发 `onError`（那只管流本身出错），
+  ///    连接照开不误。补齐循环断在半路，`_handshaken` 永远不置位，
+  ///    界面就永远卡在「连接中」——既不报错也不重连。
+  /// 2. 每条消息各跑各的，互相穿插。补齐还在慢慢应用几千条的时候，
+  ///    一条广播插进来把 `lastSeq` 设成了新 op 的号，**一步跨过补齐
+  ///    没来得及应用的那一段**，那段从此再也要不回来。
+  ///
+  /// 排队解决第 2 个，try/catch 解决第 1 个：出错就断开重连，
+  /// 让补齐从头再来一次，而不是留下一个半死不活的连接。
+  void _handleMessage(int gen, dynamic raw) {
+    _messageQueue = _messageQueue.then((_) async {
+      if (gen != _connectGen) return;
+      try {
+        await _onRaw(gen, raw);
+      } on Object catch (e) {
+        _log('连接#$gen 处理消息出错：$e');
+        _lastFailure = '同步数据时出错，正在重试：$e';
+        await _channel?.sink.close();
+        _onSocketClosed(gen);
+      }
+    });
+  }
+
+  Future<void> _messageQueue = Future<void>.value();
+
   Future<void> _onRaw(int gen, dynamic raw) async {
     // 旧连接的消息一律不理——它说的是过时的事。
     if (gen != _connectGen) return;
@@ -402,7 +489,20 @@ class SyncClient {
         for (final op in msg.ops) {
           await db.applyOp(op);
         }
-        await db.setSetting(SyncKeys.lastSeq, '${msg.serverSeq}');
+        // 记**实际收到的**最大号，而不是服务端报的全局最大号。
+        //
+        // 补齐查询是有上限的（服务端 opsSince 的 limit）。真被截断时，
+        // 服务端的全局最大号会远大于这一批的末尾；照着全局最大号记，
+        // 没发来的那一段就被跳过了。按收到的记，最坏情况只是下次重连
+        // 再补一截，不会丢。
+        final received = msg.ops.fold<int>(
+          0,
+          (max, op) => (op.seq ?? 0) > max ? op.seq! : max,
+        );
+        await db.setSetting(
+          SyncKeys.lastSeq,
+          '${msg.ops.isEmpty ? msg.serverSeq : received}',
+        );
         _handshaken = true;
         _reconnectAttempt = 0;
         _emit(_state.copyWith(status: SyncStatus.online, clearError: true));
@@ -414,11 +514,20 @@ class SyncClient {
         // 关键：不能只回填 seq，必须重放受影响的字段，否则会丢更新。
         // 原因见设计文档 §4.5。
         await db.ackOps(msg.seqByOpId);
-        final maxAcked = msg.seqByOpId.values.fold<int>(0, (a, b) => a > b ? a : b);
-        final known = await db.getIntSetting(SyncKeys.lastSeq);
-        if (maxAcked > known) {
-          await db.setSetting(SyncKeys.lastSeq, '$maxAcked');
-        }
+
+        // **这里绝对不能推进 lastSeq。**
+        //
+        // ACK 里的号是「服务端给**我推上去的** op 分配的号」，而 lastSeq 的
+        // 含义是「这个号之前的改动我**全都收到了**」。这是两个不同的量。
+        //
+        // 原来这里拿 ACK 的最大号去覆盖 lastSeq，结果是：一台落后很多的
+        // 设备刚连上就推送自己离线期间的改动，服务端给它们分配了 5592、
+        // 5593……客户端就把 lastSeq 记成 5593——可它根本没收到 1~5591。
+        // 那一段从此被永久跳过：下次只会要 5593 之后的，中间的看板和卡片
+        // 再也补不回来。这个 bug 让一台设备少了 5 块看板。
+        //
+        // 自己推上去的 op 不推进 lastSeq，代价只是重连时服务端会把它们再
+        // 发回来一次，而 applyOp 按 opId 去重，照单全收也不会出问题。
         _flushing = false;
         await _refreshPending();
 
@@ -428,7 +537,12 @@ class SyncClient {
           await db.applyOp(op);
           if ((op.seq ?? 0) > maxSeq) maxSeq = op.seq!;
         }
-        await db.setSetting(SyncKeys.lastSeq, '$maxSeq');
+        // **握手没完成就不能动进度。** 广播来的是「最新的那一条」，
+        // 它的号和「我已经收齐到哪」之间可能隔着几千条没补的。
+        // 这里一旦照着广播的号往前记，中间那段就被永久跳过了。
+        if (_handshaken) {
+          await db.setSetting(SyncKeys.lastSeq, '$maxSeq');
+        }
 
       case EditingMessage():
         final next = {..._state.editingByOthers};
@@ -524,6 +638,10 @@ class SyncClient {
             value: jsonDecode(row.valueJson),
             deviceId: row.deviceId,
             wallTs: row.wallTs,
+            // 漏了它，并发检测就是瞎的：服务端和别的设备拿不到「产生这条
+            // 改动时，这台设备已知到哪个号」，`areConcurrent` 永远判不出
+            // 并发，冲突提示也就永远不会出现。
+            baseSeq: row.baseSeq,
           ),
       ]),
     );

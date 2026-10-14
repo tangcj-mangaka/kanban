@@ -92,6 +92,14 @@ class AppDatabase extends _$AppDatabase {
     },
   );
 
+  /// 应用不了的 op（值和列的类型对不上）。
+  ///
+  /// 只留着给诊断用——它们已经进了 op 日志，不会丢，但没有物化到表里。
+  /// 不往界面上报：一条坏 op 不该变成用户要处理的事，但排查时得找得到。
+  final List<String> _badOps = [];
+
+  List<String> get badOps => List.unmodifiable(_badOps);
+
   /// 本机产生了新 op。同步层据此触发一次推送。
   ///
   /// 用广播流而不是让同步层轮询待发队列——用户松手到局域网另一端动起来
@@ -311,7 +319,25 @@ class AppDatabase extends _$AppDatabase {
       // 见 [_replayField]，加列的迁移会重放日志。
       if (!_canMaterialize(op)) return true;
 
-      await _writeField(op);
+      // 值和列的类型对不上时，和「不认识的字段」同样处理：记进日志、
+      // 算作已处理，但不物化、不更新 fieldSeqs。
+      //
+      // 上面那段注释讲的坑，这里原样踩了第二遍——当初只给「字段名不认识」
+      // 做了兜底，没给「值的类型不对」做。一条这样的 op 会让补齐循环在
+      // 半路抛异常，连接还开着、状态永远停在「连接中」，而之后一条广播就
+      // 能把 lastSeq 推到后面去，中间那一整段从此永久跳过。真实后果是
+      // 一台设备少了 5 块看板。
+      //
+      // 不物化就不会把坏值写进表；留在日志里，将来版本修好了还能重放。
+      try {
+        await _writeField(op);
+      } on Object catch (e) {
+        // 只留最近若干条：这是诊断线索，不是需要完整保存的账本，
+        // 不能让它在长跑的进程里无限长大。
+        if (_badOps.length >= 50) _badOps.removeAt(0);
+        _badOps.add('${op.entity}.${op.field}（${op.opId}）：$e');
+        return true;
+      }
 
       await into(fieldSeqs).insertOnConflictUpdate(
         FieldSeqsCompanion.insert(

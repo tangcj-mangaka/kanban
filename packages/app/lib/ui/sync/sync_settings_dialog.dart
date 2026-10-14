@@ -198,6 +198,13 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
               ),
       ),
       actions: [
+        // 「少了一批看板」的出口。放在这里而不是藏进菜单：真遇上这事的人
+        // 正盯着这个弹窗发愁，得让他看得见。
+        if (paired)
+          TextButton(
+            onPressed: _resync,
+            child: const Text('重新完整同步'),
+          ),
         if (paired)
           TextButton(
             onPressed: _forget,
@@ -257,6 +264,36 @@ class _SyncSettingsDialogState extends ConsumerState<_SyncSettingsDialog> {
     await ref.read(syncClientProvider).forgetServer();
     _hostController.clear();
     if (mounted) setState(() {});
+  }
+
+  /// 把同步进度清零重来。
+  ///
+  /// 先问一句，因为几千条改动重放一遍要等一会儿；但**不吓唬人**——
+  /// 这个操作不删任何东西，重复的改动会被去重挡掉。
+  Future<void> _resync() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新完整同步'),
+        content: const Text(
+          '从头把服务端的改动收一遍，用来补齐这台设备上缺失的看板和卡片。\n\n'
+          '不会删除任何东西，也不会产生重复——已经有的改动会被跳过。'
+          '改动多的话要等一会儿。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('开始'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(syncClientProvider).resync();
   }
 }
 

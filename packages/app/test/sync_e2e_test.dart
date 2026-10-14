@@ -7,6 +7,7 @@ import 'package:kanban/data/database.dart';
 import 'package:kanban/data/repository.dart';
 import 'package:kanban/sync/sync_client.dart';
 import 'package:server/src/store.dart';
+import 'package:shared/shared.dart';
 import 'package:server/src/sync_server.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
@@ -193,6 +194,177 @@ void main() {
         (await dbA.pendingOps()).isNotEmpty,
         isTrue,
         reason: '这些改动应当攒在待发队列里',
+      );
+    });
+
+    test('落后很多的设备，带着自己的改动重连，一块看板都不能少', () async {
+      // 这是真实踩到的 bug：台式机离线很久，笔记本上建了 7 块板；台式机
+      // 自己也离线建了板。重连后它只收到最新的 2 块，中间 5 块永久消失。
+      //
+      // 根因是客户端收到 ACK 时，把「服务端给我推上去的 op 分配的号」
+      // 当成了「我已经收到了这个号之前的全部改动」。一台落后的设备刚连上
+      // 就推送，服务端分配的号远超它实际收到的位置，中间那段从此被跳过。
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+
+      // B 先下线。
+      await clientB.stop();
+
+      // A 在 B 离线期间建一批板，攒出足够多的「B 没收到」的改动。
+      final madeWhileAway = <String>[];
+      for (var i = 0; i < 5; i++) {
+        madeWhileAway.add(await repoA.createBoard(name: 'A 建的 $i'));
+      }
+      await waitUntil(() => clientA.state.pending == 0, what: 'A 推完');
+
+      // B 离线期间也自己建了板——重连时它会把这些推上去，
+      // 服务端分配的号会落在 A 那批的后面。这正是触发条件。
+      final mine = await repoB.createBoard(name: 'B 自己的');
+      expect((await dbB.pendingOps()).isNotEmpty, isTrue);
+
+      await clientB.start();
+      await waitUntil(
+        () => clientB.state.status == SyncStatus.online,
+        what: 'B 重新上线',
+      );
+      await waitUntil(() => clientB.state.pending == 0, what: 'B 推完自己的');
+
+      Future<Set<String>> boardsOf(Repository repo) async => {
+            for (final s in await repo.watchBoardSummaries().first) s.board.id,
+          };
+
+      await waitUntil(
+        () async => (await boardsOf(repoB)).length >= 6,
+        what: 'B 收齐 A 的 5 块 + 自己的 1 块',
+      );
+
+      final onB = await boardsOf(repoB);
+      for (final id in madeWhileAway) {
+        expect(onB, contains(id), reason: '离线期间 A 建的板一块都不能少');
+      }
+      expect(onB, contains(mine));
+    });
+
+    test('补齐中途出错，不能把进度跳到后面去', () async {
+      // 真实事故的还原。
+      //
+      // 补齐循环中途抛异常时，原来的代码会：连接继续开着、状态永远停在
+      // 「连接中」、不重连也不报错；而之后任何一条广播都会独立把 lastSeq
+      // 设成那条新 op 的号，**一步跨过补齐没应用完的那几千条**——它们从此
+      // 再也要不回来。用户那台设备就是这样少了 5 块看板。
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+      await clientB.stop();
+
+      final madeWhileAway = <String>[];
+      for (var i = 0; i < 4; i++) {
+        madeWhileAway.add(await repoA.createBoard(name: 'A 建的 $i'));
+      }
+      await waitUntil(() => store.maxSeq >= 4, what: 'A 的改动到服务端');
+
+      // 往补齐批次中间塞一条客户端应用不了的 op：标题字段给个数字，
+      // 物化时按字符串取用会抛类型错误。
+      // 现实里对应的是版本错位、日志损坏这类情况——不管什么原因，
+      // 补齐半路失败都不该把后面的数据连带丢掉。
+      store.append([
+        Op(
+          opId: 'poison',
+          boardId: madeWhileAway.first,
+          entity: Entity.card,
+          entityId: 'poison-card',
+          field: CardF.title,
+          value: 12345, // 这里应该是字符串
+          deviceId: 'A',
+          wallTs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ]);
+      // 毒丸之后再建一块，确保它排在毒丸后面。
+      final afterPoison = await repoA.createBoard(name: '毒丸之后');
+      await waitUntil(() => store.maxSeq >= 6, what: '毒丸之后的改动到服务端');
+
+      await clientB.start();
+
+      // 给它足够时间去尝试、失败、重连。
+      await Future<void>.delayed(const Duration(seconds: 2));
+
+      // A 再推一条，走广播这条路到 B。
+      final seqBefore = store.maxSeq;
+      await repoA.createBoard(name: '广播过来的');
+      await waitUntil(() => store.maxSeq > seqBefore, what: 'A 再推完');
+      await Future<void>.delayed(const Duration(seconds: 1));
+
+      // **核心断言**：进度绝不能超过实际收到的最大号。
+      // 超过了就意味着中间那段被永久跳过，再也补不回来。
+      final lastSeq = await dbB.getIntSetting(SyncKeys.lastSeq);
+      final have = {
+        for (final r in await dbB.select(dbB.ops).get())
+          if (r.seq != null) r.seq!,
+      };
+      final maxHave = have.isEmpty ? 0 : have.reduce((a, b) => a > b ? a : b);
+      expect(
+        lastSeq,
+        lessThanOrEqualTo(maxHave),
+        reason: '进度记到了 $lastSeq，实际只收到 $maxHave——'
+            '中间 ${maxHave + 1}~$lastSeq 会被永久跳过',
+      );
+      // 而且要真的恢复：一条坏 op 不该挡住它后面的所有数据。
+      final onB = {
+        for (final x in await repoB.watchBoardSummaries().first) x.board.id,
+      };
+      for (final id in madeWhileAway) {
+        expect(onB, contains(id), reason: '毒丸之前建的板不能少');
+      }
+      expect(onB, contains(afterPoison), reason: '毒丸之后建的板更不能少');
+    });
+
+    test('重新完整同步：把漏掉的数据补回来，且不产生重复', () async {
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+
+      final boardId = await repoA.createBoard(name: '共有的板');
+      await repoA.createCard(boardId: boardId, x: 0, y: 0, title: '一张卡');
+      await waitUntil(
+        () async => (await repoB.watchCanvasCards(boardId).first).isNotEmpty,
+        what: 'B 收到',
+      );
+
+      // 人为把 B 的进度推到最前面，模拟那台少了看板的设备：
+      // 之后 A 再建东西，B 永远收不到。
+      await dbB.setSetting(SyncKeys.lastSeq, '999999');
+      final missed = await repoA.createBoard(name: 'B 会漏掉的板');
+      await waitUntil(() => store.maxSeq > 0, what: 'A 推完');
+      await clientB.stop();
+      await clientB.start();
+      await waitUntil(
+        () => clientB.state.status == SyncStatus.online,
+        what: 'B 重连',
+      );
+
+      final before = {
+        for (final x in await repoB.watchBoardSummaries().first) x.board.id,
+      };
+      expect(before, isNot(contains(missed)), reason: '先确认确实漏了');
+
+      // 按下「重新完整同步」。
+      await clientB.resync();
+      await waitUntil(
+        () async => (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == missed),
+        what: 'B 把漏掉的板补回来',
+      );
+
+      // 补回来了，而且没有重复——重复的 op 按 opId 去重。
+      final after = await repoB.watchBoardSummaries().first;
+      expect(after.map((x) => x.board.id), contains(missed));
+      expect(
+        after.map((x) => x.board.id).toSet().length,
+        after.length,
+        reason: '不能出现重复的看板',
+      );
+      expect(
+        (await repoB.watchCanvasCards(boardId).first).length,
+        1,
+        reason: '卡片也不能被复制一份',
       );
     });
   });
