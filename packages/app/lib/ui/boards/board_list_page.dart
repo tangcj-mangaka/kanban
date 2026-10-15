@@ -14,6 +14,7 @@ import '../theme/donkey_icon.dart';
 import '../board/board_page.dart';
 import '../sync/sync_status_chip.dart';
 import 'board_dialogs.dart';
+import 'deleted_boards_dialog.dart';
 import 'trello_import_dialog.dart';
 
 /// 看板列表页 —— 应用入口。
@@ -103,6 +104,8 @@ class _Header extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final mode = ref.watch(themeModeProvider);
+    final deletedCount =
+        (ref.watch(deletedBoardsProvider).value ?? const []).length;
 
     final compact = isCompact(context);
 
@@ -142,6 +145,17 @@ class _Header extends ConsumerWidget {
                 }),
               ),
               const SizedBox(width: 4),
+              // 有删掉的看板时才露出这个入口。没有的话它是纯噪音，
+              // 而真误删过的人一眼就该看见它。
+              if (deletedCount > 0)
+                IconButton(
+                  tooltip: '删掉的看板（$deletedCount）',
+                  onPressed: () => showDeletedBoards(context),
+                  icon: Badge.count(
+                    count: deletedCount,
+                    child: const Icon(Icons.restore_from_trash_outlined),
+                  ),
+                ),
               // 从 Trello 搬家：不是天天用，所以只给一个图标按钮，
               // 不跟「新建看板」抢位置。
               IconButton(

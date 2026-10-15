@@ -100,6 +100,11 @@ final boardSummariesProvider = StreamProvider<List<BoardSummary>>(
   (ref) => ref.watch(repositoryProvider).watchBoardSummaries(),
 );
 
+/// 删掉的看板。只在有东西可捞时，列表页才露出那个入口。
+final deletedBoardsProvider = StreamProvider<List<BoardSummary>>(
+  (ref) => ref.watch(repositoryProvider).watchDeletedBoards(),
+);
+
 /// 每分钟走一次的「现在几点」。
 ///
 /// 「超时变红」依赖当前时间，而时间会自己往前走：一张卡片在你盯着它的

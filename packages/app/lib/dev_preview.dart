@@ -24,6 +24,7 @@ import 'ui/card/attachment_section.dart';
 import 'ui/card/card_history_sheet.dart';
 import 'ui/card/move_card_dialog.dart';
 import 'ui/boards/trello_import_dialog.dart';
+import 'ui/boards/deleted_boards_dialog.dart';
 import 'data/trello/trello_export.dart';
 import 'dart:io';
 import 'ui/sync/sync_settings_dialog.dart';
@@ -74,7 +75,9 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       home: _narrow(
-        _trelloFile.isNotEmpty
+        _autoOpen == 'deleted'
+            ? const _DeletedBoardsPreview()
+            : _trelloFile.isNotEmpty
             ? const _TrelloPreview()
             : _globalSearch.isNotEmpty
             ? BoardListPage(initialQuery: _globalSearch)
@@ -156,6 +159,32 @@ Widget _narrow(Widget child) {
       ),
     ),
   );
+}
+
+/// 直接开「删掉的看板」弹窗。只给截图验证用。
+class _DeletedBoardsPreview extends ConsumerStatefulWidget {
+  const _DeletedBoardsPreview();
+
+  @override
+  ConsumerState<_DeletedBoardsPreview> createState() =>
+      _DeletedBoardsPreviewState();
+}
+
+class _DeletedBoardsPreviewState
+    extends ConsumerState<_DeletedBoardsPreview> {
+  bool _opened = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_opened) {
+      _opened = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDeletedBoards(context);
+      });
+    }
+    return const BoardListPage();
+  }
 }
 
 /// 读文件、解析、直接开导入弹窗。只给截图验证用。

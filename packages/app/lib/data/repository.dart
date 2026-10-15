@@ -108,7 +108,22 @@ class Repository {
   // 看板
   // -------------------------------------------------------------------------
 
-  Stream<List<BoardSummary>> watchBoardSummaries() {
+  Stream<List<BoardSummary>> watchBoardSummaries() => _boardSummaries(
+    deleted: false,
+  );
+
+  /// 删掉的看板。
+  ///
+  /// 删除走的是墓碑：板上只多了一条「deleted = true」，板里的卡片、标签、
+  /// 附件一个都没动。所以「恢复」就是把那个字段改回去，内容原样回来。
+  ///
+  /// 之所以要有这个入口：没有它，墓碑删除的好处就用不上——数据留着，
+  /// 却没有门能进去拿。
+  Stream<List<BoardSummary>> watchDeletedBoards() => _boardSummaries(
+    deleted: true,
+  );
+
+  Stream<List<BoardSummary>> _boardSummaries({required bool deleted}) {
     // 卡片数只算画布上的：归档进干草仓库的和已删除的都不计入。
     final cardCount = db.cards.id.count(
       filter: db.cards.deleted.equals(false) & db.cards.archived.equals(false),
@@ -120,7 +135,7 @@ class Repository {
             leftOuterJoin(db.cards, db.cards.boardId.equalsExp(db.boards.id)),
           ])
           ..addColumns([cardCount, lastUpdated])
-          ..where(db.boards.deleted.equals(false))
+          ..where(db.boards.deleted.equals(deleted))
           ..groupBy([db.boards.id])
           ..orderBy([OrderingTerm.asc(db.boards.sortOrder)]);
 
@@ -186,14 +201,33 @@ class Repository {
   /// 删除看板。走墓碑，不做物理删除。
   ///
   /// 板内的卡片和标签不单独打删除标记——它们随看板一起从所有视图里消失，
-  /// 真正的清理交给服务端的墓碑回收（90 天）。这样万一误删，恢复看板
-  /// 就能把整块内容原样带回来。
+  /// 但数据一条都没动。所以 [restoreBoard] 能把整块内容原样带回来。
+  ///
+  /// **这条改动会同步出去。** 离线删掉的板，一联网就在所有设备上消失，
+  /// 而且删除不会被「别人正在往板里加东西」拦下来——删除和编辑写的是
+  /// 不同字段，各自生效，最终那些新加的东西跟着板一起看不见。
+  ///
+  /// 服务端那边 `compact()` 目前**从来没有被调用**，所以 op 日志里的
+  /// 东西不会被物理清掉。（早先这里写的是「交给 90 天墓碑回收」，
+  /// 那是错的，机制留了但没接上。）
   Future<void> deleteBoard(String id) => db.emit(
     boardId: id,
     entity: Entity.board,
     entityId: id,
     field: BoardF.deleted,
     value: true,
+  );
+
+  /// 把删掉的看板捞回来。
+  ///
+  /// 只是把墓碑字段改回 false——板里的卡片、标签、评论、附件从来就没被
+  /// 标记删除过，所以它们会原样跟着回来，不需要逐个恢复。
+  Future<void> restoreBoard(String id) => db.emit(
+    boardId: id,
+    entity: Entity.board,
+    entityId: id,
+    field: BoardF.deleted,
+    value: false,
   );
 
   /// 把 [id] 移动到 [before] 和 [after] 之间。
