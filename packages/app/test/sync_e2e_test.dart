@@ -367,6 +367,49 @@ void main() {
         reason: '卡片也不能被复制一份',
       );
     });
+
+    test('ACK 丢了之后，重连仍然能把自己的改动推出去', () async {
+      // 真实事故的第二半：台式机能收到别人的改动，自己的两块看板却几个月
+      // 都传不出去。原因是 `_flushing` 只在收到 ACK 时才清——一次 ACK 没
+      // 回来，这个客户端就再也不推送任何东西，而界面上显示一切正常。
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+
+      // 先确认正常情况下是通的。
+      final first = await repoA.createBoard(name: '正常的板');
+      await waitUntil(
+        () async => (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == first),
+        what: 'B 收到第一块',
+      );
+
+      // 摆出「推送出去了、ACK 永远不来」的状态。
+      clientA.debugSimulateLostAck();
+
+      final stuck = await repoA.createBoard(name: 'ACK 丢了之后建的');
+      // 这时候推不出去是预期的——队列里有东西，但发不动。
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect((await dbA.pendingOps()).isNotEmpty, isTrue);
+
+      // 断线重连。**重连必须把这个状态清掉**，否则永远卡死。
+      await clientA.stop();
+      await clientA.start();
+      // 卡住时待发队列清不空，状态会一直停在「同步中」，所以这里两种都认，
+      // 好让失败落在下面那条真正说明问题的断言上。
+      await waitUntil(
+        () =>
+            clientA.state.status == SyncStatus.online ||
+            clientA.state.status == SyncStatus.syncing,
+        what: 'A 重新连上',
+      );
+
+      await waitUntil(
+        () async => (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == stuck),
+        what: 'B 收到那块卡住的板',
+      );
+      expect((await dbA.pendingOps()), isEmpty, reason: '待发队列该清空了');
+    });
   });
 
   group('并发冲突的收敛', () {

@@ -121,6 +121,13 @@ class SyncClient {
   /// 鉴权被拒。停掉自动重连，但**不阻止用户重新配置**——
   /// 令牌失效正是需要人来处理的情况，把重新配对的路也堵死就没救了。
   bool _authBlocked = false;
+  /// 有一批 op 推出去了、还在等 ACK。
+  ///
+  /// **断线时必须清掉。** 它原来只在收到 ACK 时清，于是只要有一次 ACK 没
+  /// 回来（断线、服务端出错、消息丢了），这个标志就永远是 true，`_flush`
+  /// 每次都在第一行 return——**这个客户端从此再也不推送任何东西**，直到
+  /// 应用重启。表现出来是「收得到别人的改动，自己的发不出去」，而界面上
+  /// 一切正常。真实后果是两块看板几个月都没传出去。
   bool _flushing = false;
   int _reconnectAttempt = 0;
 
@@ -398,6 +405,8 @@ class SyncClient {
     _socketSub = null;
     _channel = null;
     _handshaken = false;
+    // 这一批的 ACK 不会再来了。不清掉就再也不会有下一批。
+    _flushing = false;
     if (!_started || _host == null) return;
 
     _emit(
@@ -429,6 +438,7 @@ class SyncClient {
     await _channel?.sink.close();
     _channel = null;
     _handshaken = false;
+    _flushing = false;
   }
 
   // -------------------------------------------------------------------------
@@ -613,6 +623,13 @@ class SyncClient {
     _flushDebounce?.cancel();
     _flushDebounce = Timer(_flushDelay, _flush);
   }
+
+  /// 制造「推送出去了、ACK 永远不来」这个状态，只给测试用。
+  ///
+  /// 这个状态在真实世界里很容易出现（断线、服务端出错、消息丢了），但在
+  /// 测试里很难卡准时机，所以留个口子直接把它摆出来。
+  @visibleForTesting
+  void debugSimulateLostAck() => _flushing = true;
 
   Future<void> _flush() async {
     await _refreshPending();
