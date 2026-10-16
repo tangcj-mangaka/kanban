@@ -67,6 +67,18 @@ Future<void> main(List<String> args) async {
   _log('已配对设备 ${store.devices.length} 台');
   _log('附件 ${files.fileCount} 个，共 ${_humanBytes(files.totalBytes)}');
 
+  // 自启脚本记的是开启那一刻的 exe 绝对路径。这个服务端以 zip 分发，
+  // 用户每次更新都会换个地方解压或覆盖旧的——路径一变，开机就弹
+  // 「找不到指定的文件」，而设置里看上去还是「已开启」。所以每次启动
+  // 核一遍，对不上就悄悄修好。
+  if (await Autostart.refresh(
+    exePath: Platform.resolvedExecutable,
+    dataDir: dataDir,
+    args: ['--port', '$port', '--data-dir', dataDir],
+  )) {
+    _log('开机自启指向的程序位置变了，已更新');
+  }
+
   // 附件回收：启动时跑一次，之后每天一次。
   Future<void> collectFiles() async {
     final due = store.sweepOrphans(files.allHashes(), store.referencedHashes());
