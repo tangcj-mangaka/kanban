@@ -218,6 +218,32 @@ class Repository {
     value: true,
   );
 
+  /// 把这块看板的全部改动重新推一遍。
+  ///
+  /// 解决「这块板在我这儿有，服务器和别的设备上死活不出现」：本机的改动
+  /// 只有被服务端 ACK 过才会拿到序号，而有了序号就再也不会重发。如果那个
+  /// 序号是**另一个服务端**给的（换过数据目录、重装过、重新解压过），
+  /// 现在这个服务端压根没见过这些改动，而本机却以为早就发出去了。
+  ///
+  /// 做法是把这块板名下所有改动的序号清空，让它们重新回到待发队列。
+  ///
+  /// **安全**：服务端按 opId 去重，已经有的会原样返回它本来的序号，不会
+  /// 产生重复；真缺的那些才会被收下。
+  ///
+  /// 返回有多少条改动被重新排进队列。
+  Future<int> repushBoard(String boardId) async {
+    final count = await db.customUpdate(
+      'UPDATE ops SET seq = NULL WHERE board_id = ?',
+      variables: [Variable(boardId)],
+      updates: {db.ops},
+      updateKind: UpdateKind.update,
+    );
+    // 必须敲一下，否则这些改动就躺在待发队列里没人发——同步层是靠这个
+    // 信号醒的，而裸 SQL 改表不会触发它。第一版就漏了这步，测试抓到了。
+    if (count > 0) db.notifyLocalOps();
+    return count;
+  }
+
   /// 把删掉的看板捞回来。
   ///
   /// 只是把墓碑字段改回 false——板里的卡片、标签、评论、附件从来就没被

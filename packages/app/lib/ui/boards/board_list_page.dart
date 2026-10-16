@@ -596,6 +596,9 @@ class _BoardMenu extends ConsumerWidget {
           PopupMenuItem(value: 'rename', child: Text('重命名')),
           PopupMenuItem(value: 'color', child: Text('改封面色')),
           PopupMenuDivider(),
+          // 「这块板在我这儿有，别的设备上死活不出现」的出口。
+          PopupMenuItem(value: 'repush', child: Text('重新推送到服务器')),
+          PopupMenuDivider(),
           PopupMenuItem(value: 'delete', child: Text('删除看板')),
         ],
         onSelected: (action) => _handle(context, ref, action),
@@ -613,6 +616,8 @@ class _BoardMenu extends ConsumerWidget {
           initial: board.name,
         );
         if (name != null) await repo.renameBoard(board.id, name);
+      case 'repush':
+        await _repush(context, ref);
       case 'color':
         final choice = await pickSwatch(context, current: board.color);
         if (choice != null) await repo.setBoardColor(board.id, choice.key);
@@ -620,6 +625,49 @@ class _BoardMenu extends ConsumerWidget {
         final ok = await confirmDeleteBoard(context, board.name);
         if (ok) await repo.deleteBoard(board.id);
     }
+  }
+
+  /// 把这块板的改动重新排进待发队列。
+  ///
+  /// 先问一句，但**不吓唬人**——这个操作不删不改任何内容，只是让本机把
+  /// 这块板的改动再发一遍；服务端按 opId 去重，不会产生重复。
+  Future<void> _repush(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('重新推送「${board.name.isEmpty ? '未命名看板' : board.name}」'),
+        content: const Text(
+          '用在这种情况：这块板在本机好好的，服务器和别的设备上却死活不出现。\n\n'
+          '它会把这块板的全部改动重新排进待发队列发一遍。不会删改任何内容，'
+          '服务端已经有的会被自动跳过，不产生重复。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('重新推送'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final count = await ref.read(repositoryProvider).repushBoard(board.id);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          count == 0
+              ? '这块板没有需要推送的改动'
+              : '已把 $count 条改动重新排进待发队列，连上服务器后会自动发出去',
+        ),
+        behavior: SnackBarBehavior.floating,
+        width: 460,
+      ),
+    );
   }
 }
 

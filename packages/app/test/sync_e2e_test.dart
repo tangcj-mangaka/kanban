@@ -410,6 +410,103 @@ void main() {
       );
       expect((await dbA.pendingOps()), isEmpty, reason: '待发队列该清空了');
     });
+
+    test('被别的服务端 ACK 过的看板，重新推送能救回来', () async {
+      // 真实事故的第三半：台式机上有两块板，服务器和笔记本上死活不出现，
+      // 而台式机显示「已同步、0 条待发」——它以为早发出去了。
+      //
+      // 本机的改动只有被服务端 ACK 才会拿到序号，有了序号就再也不重发。
+      // 如果那个序号是**另一个服务端**给的（换过数据目录、重装、重新解压），
+      // 现在这个服务端压根没见过这些改动，而本机却不会再发。
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+
+      // A 离线建一块板。
+      await clientA.stop();
+      final boardId = await repoA.createBoard(name: '只有我这儿有');
+      await repoA.createCard(
+        boardId: boardId,
+        x: 0,
+        y: 0,
+        title: '板里的一张卡',
+      );
+
+      // 冒充「被另一个服务端 ACK 过」：给这些改动填上当前服务端从没发过
+      // 的序号。于是它们不再是待发状态，本机以为同步完了。
+      final mine = await dbA.pendingOps();
+      await dbA.ackOps({
+        for (var i = 0; i < mine.length; i++) mine[i].opId: 900000 + i,
+      });
+      expect(await dbA.pendingOps(), isEmpty, reason: '先造出「以为发过了」的状态');
+
+      await clientA.start();
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online,
+        what: 'A 上线',
+      );
+
+      // 确认这就是病症：B 收不到，而 A 这边一片祥和。
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      expect(
+        (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == boardId),
+        isFalse,
+        reason: '病症：B 收不到这块板',
+      );
+
+      // 按下「重新推送到服务器」。
+      final count = await repoA.repushBoard(boardId);
+      expect(count, greaterThan(0));
+
+      await waitUntil(
+        () async => (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == boardId),
+        what: 'B 终于收到这块板',
+      );
+
+      // 板里的卡片也得跟着过去，不能只过来一个空壳。
+      await waitUntil(
+        () async => (await repoB.watchCanvasCards(boardId).first).isNotEmpty,
+        what: 'B 收到板里的卡片',
+      );
+      expect(
+        (await repoB.watchCanvasCards(boardId).first).single.title,
+        '板里的一张卡',
+      );
+
+      // 不能产生重复：服务端按 opId 去重。
+      final onB = await repoB.watchBoardSummaries().first;
+      expect(
+        onB.where((x) => x.board.id == boardId),
+        hasLength(1),
+        reason: '不该冒出两块同样的板',
+      );
+    });
+
+    test('stop 再 start 之后，本机改动仍然会自动推送', () async {
+      // 「本机改动产生了就推一次」靠的是一个流订阅。stop() 会取消它，
+      // 而原来取消之后没有置空，start() 里的 `??=` 看到非空（但已失效）
+      // 就不再重订——于是**重启同步之后，本机改动永远不触发推送**，
+      // 只能等下一次握手顺带发出去。
+      await connect(clientA, 'A');
+      await connect(clientB, 'B');
+
+      await clientA.stop();
+      await clientA.start();
+      await waitUntil(
+        () => clientA.state.status == SyncStatus.online,
+        what: 'A 重新上线',
+      );
+
+      // 上线之后才产生的改动——握手那一次 flush 带不上它。
+      final boardId = await repoA.createBoard(name: '重启之后建的');
+
+      await waitUntil(
+        () async => (await repoB.watchBoardSummaries().first)
+            .any((x) => x.board.id == boardId),
+        what: 'B 收到重启之后建的板',
+      );
+    });
   });
 
   group('并发冲突的收敛', () {

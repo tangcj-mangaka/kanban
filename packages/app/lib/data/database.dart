@@ -107,6 +107,14 @@ class AppDatabase extends _$AppDatabase {
   Stream<void> get localOpAdded => _localOps.stream;
   final _localOps = StreamController<void>.broadcast();
 
+  /// 手动敲一下这个信号：待发队列变了，同步层该去看看。
+  ///
+  /// [emit] 自己会敲，但绕过 emit 直接动 ops 表的操作（比如把改动的序号
+  /// 清空、重新排进待发队列）不会——结果是队列里躺着东西却没人发。
+  void notifyLocalOps() {
+    if (!_localOps.isClosed) _localOps.add(null);
+  }
+
   @override
   Future<void> close() {
     _localOps.close();

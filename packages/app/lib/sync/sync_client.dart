@@ -204,6 +204,17 @@ class SyncClient {
 
   Future<void> _init() async {
     await _loadSettings();
+    _watchLocalOps();
+  }
+
+  /// 订阅「本机产生了新改动」，有改动就排一次推送。
+  ///
+  /// **`_init` 和 `start` 两处都要调。** `_init` 一辈子只跑一次（只配置
+  /// 不调 start 的用法要靠它），而 [stop] 会把订阅取消掉——原来取消之后
+  /// 没有置空，`??=` 看到非空（但已失效）的订阅就不再重订，结果是
+  /// **stop 再 start 之后，本机改动永远不会触发推送**，只能等下一次握手
+  /// 顺带发出去。`??=` 本身是幂等的，重复调没有副作用。
+  void _watchLocalOps() {
     _localOpSub ??= db.localOpAdded.listen((_) => _scheduleFlush());
   }
 
@@ -211,6 +222,7 @@ class SyncClient {
     await _ensureInit();
     return _serialized(() async {
       _started = true;
+      _watchLocalOps();
       _log('start()：地址 ${_host ?? '未配置'}');
 
       if (_host == null) {
@@ -227,6 +239,8 @@ class SyncClient {
     _heartbeat?.cancel();
     _flushDebounce?.cancel();
     await _localOpSub?.cancel();
+    // 必须置空，否则 start() 里的 `??=` 会以为还订着，再也不重订。
+    _localOpSub = null;
     await _closeSocket();
     _emit(const SyncState(status: SyncStatus.disabled));
   }
