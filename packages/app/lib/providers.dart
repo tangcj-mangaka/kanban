@@ -100,6 +100,13 @@ final boardSummariesProvider = StreamProvider<List<BoardSummary>>(
   (ref) => ref.watch(repositoryProvider).watchBoardSummaries(),
 );
 
+/// 每条评论各自带的图，按评论 ID 归组。
+final commentAttachmentsProvider =
+    StreamProvider.family<Map<String, List<AttachmentRow>>, String>(
+  (ref, cardId) =>
+      ref.watch(repositoryProvider).watchCommentAttachments(cardId),
+);
+
 /// 删掉的看板。只在有东西可捞时，列表页才露出那个入口。
 final deletedBoardsProvider = StreamProvider<List<BoardSummary>>(
   (ref) => ref.watch(repositoryProvider).watchDeletedBoards(),

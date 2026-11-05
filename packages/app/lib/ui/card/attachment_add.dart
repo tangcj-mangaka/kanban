@@ -7,6 +7,7 @@ import 'package:mime/mime.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:path/path.dart' as p;
 
+import '../../data/repository.dart';
 import '../../providers.dart';
 
 /// 往卡片上加附件。
@@ -48,6 +49,69 @@ Future<int> addAttachmentFiles(
   // 顺手推一把。连不上也无所谓，文件在队列里等着。
   unawaited(ref.read(attachmentSyncerProvider).flush());
   return added;
+}
+
+/// 只把文件**导入本地缓存**，不挂到任何地方。
+///
+/// 给评论里发图用：图要先能预览，等用户点了「发表」才和评论一起落库。
+/// 导入本身是纯本地的（算哈希、拷进缓存、生成缩略图），即使用户最后
+/// 放弃发表也不会留下任何 op——顶多缓存里多一份文件，按内容寻址的，
+/// 下次用到同一张图还能省一次导入。
+Future<List<ImportedFile>> importForComment(
+  WidgetRef ref,
+  List<({String path, String name})> files,
+) async {
+  final store = ref.read(attachmentStoreProvider);
+  final out = <ImportedFile>[];
+
+  for (final picked in files) {
+    final file = File(picked.path);
+    if (!file.existsSync()) continue;
+    final imported = await store.importFile(file, displayName: picked.name);
+    out.add(
+      ImportedFile(
+        hash: imported.hash,
+        filename: imported.filename,
+        size: imported.size,
+        mime: imported.mime,
+        thumbHash: imported.thumbHash,
+      ),
+    );
+  }
+  return out;
+}
+
+/// 把内存里的字节导入本地缓存，不挂到任何地方。剪贴板里的图走这里。
+Future<ImportedFile?> importBytesForComment(
+  WidgetRef ref,
+  Uint8List bytes,
+) async {
+  final dir = await Directory(
+    p.join(Directory.systemTemp.path, 'kanban-paste'),
+  ).create(recursive: true);
+
+  final name = pastedImageName(bytes);
+  final file = File(p.join(dir.path, name));
+  await file.writeAsBytes(bytes);
+
+  final list = await importForComment(ref, [(path: file.path, name: name)]);
+  return list.isEmpty ? null : list.first;
+}
+
+/// 从剪贴板取图，导入本地缓存但不挂上去。拿不到图就返回空。
+Future<List<ImportedFile>> importClipboardForComment(WidgetRef ref) async {
+  final image = await Pasteboard.image;
+  if (image != null && image.isNotEmpty) {
+    final one = await importBytesForComment(ref, image);
+    return one == null ? const [] : [one];
+  }
+
+  final paths = await Pasteboard.files();
+  if (paths.isEmpty) return const [];
+  return importForComment(
+    ref,
+    [for (final path in paths) (path: path, name: p.basename(path))],
+  );
 }
 
 /// 加一份**内存里的**数据当附件，主要给剪贴板里的图片用。

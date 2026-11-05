@@ -1,9 +1,12 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
 import '../../data/database.dart';
+import '../../data/repository.dart';
+import '../attachment_image.dart';
 import '../../providers.dart';
 import '../boards/board_dialogs.dart';
 import '../format.dart';
@@ -44,12 +47,21 @@ class _CardDetailDialog extends ConsumerStatefulWidget {
 class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
   final _titleController = TextEditingController();
   final _commentController = TextEditingController();
+  final _commentFocus = FocusNode();
   bool _titleInitialized = false;
+
+  /// 评论框里攒着、还没发出去的图。
+  ///
+  /// 已经导入本地缓存（算过哈希、有缩略图），但还没产生任何 op——用户
+  /// 放弃发表的话什么痕迹都不会留下。评论是只增不改的，图只能在点
+  /// 「发表」那一刻和评论一起落库。
+  final List<ImportedFile> _draftImages = [];
 
   @override
   void dispose() {
     _titleController.dispose();
     _commentController.dispose();
+    _commentFocus.dispose();
     super.dispose();
   }
 
@@ -153,6 +165,27 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
   /// 处理一次 Ctrl/Cmd+V。
   Future<void> _onPaste() async {
+    // 光标在评论框里时，粘的图进**评论草稿**而不是卡片附件——人在那儿
+    // 打字，心里想的就是「发在这条评论里」。
+    if (_commentFocus.hasFocus) {
+      final imported = await importClipboardForComment(ref);
+      if (imported.isNotEmpty) {
+        if (!mounted) return;
+        setState(() => _draftImages.addAll(imported));
+        return;
+      }
+      // 剪贴板里不是图也不是文件，把粘贴还给输入框去粘文字。
+      if (!mounted) return;
+      final focused = primaryFocus?.context;
+      if (focused != null && focused.mounted) {
+        Actions.maybeInvoke(
+          focused,
+          const PasteTextIntent(SelectionChangedCause.keyboard),
+        );
+      }
+      return;
+    }
+
     final handled = await pasteAttachment(
       ref,
       boardId: widget.boardId,
@@ -326,6 +359,9 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
   Widget _comments(ThemeData theme, KanbanColors k) {
     final comments = ref.watch(commentsProvider(widget.cardId)).value ?? const [];
+    final commentImages =
+        ref.watch(commentAttachmentsProvider(widget.cardId)).value ??
+            const <String, List<AttachmentRow>>{};
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -367,6 +403,7 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (_, i) => _CommentTile(
                 comment: comments[i],
+                images: commentImages[comments[i].id] ?? const [],
                 onDelete: () => ref
                     .read(repositoryProvider)
                     .deleteComment(widget.boardId, comments[i].id),
@@ -374,15 +411,39 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
             ),
           ),
         const SizedBox(height: 10),
+        if (_draftImages.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 8, bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var i = 0; i < _draftImages.length; i++)
+                  _DraftImage(
+                    file: _draftImages[i],
+                    onRemove: () => setState(() => _draftImages.removeAt(i)),
+                  ),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Row(
             children: [
+              IconButton(
+                tooltip: '加图片（也可以直接 Ctrl+V 粘贴）',
+                onPressed: _pickCommentImages,
+                icon: const Icon(Icons.image_outlined, size: 20),
+                color: k.cardBody,
+              ),
               Expanded(
                 child: TextField(
                   controller: _commentController,
-                  decoration: const InputDecoration(
-                    hintText: '写评论。发表后不能编辑，想改就删了重发',
+                  focusNode: _commentFocus,
+                  decoration: InputDecoration(
+                    hintText: _draftImages.isEmpty
+                        ? '写评论。发表后不能编辑，想改就删了重发'
+                        : '说点什么，或者直接发出去',
                   ),
                   onSubmitted: (_) => _addComment(),
                 ),
@@ -409,11 +470,39 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
   Future<void> _addComment() async {
     final text = _commentController.text.trim();
-    if (text.isEmpty) return;
+    // 只发图、不写字也算一条评论——截个图扔进来本身就是一次发言。
+    if (text.isEmpty && _draftImages.isEmpty) return;
+
+    final images = [..._draftImages];
     _commentController.clear();
-    await ref
-        .read(repositoryProvider)
-        .addComment(widget.boardId, widget.cardId, text);
+    setState(_draftImages.clear);
+
+    await ref.read(repositoryProvider).addComment(
+          widget.boardId,
+          widget.cardId,
+          text,
+          images: images,
+        );
+  }
+
+  /// 选图片放进评论草稿。
+  Future<void> _pickCommentImages() async {
+    final picked = await openFiles(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: '图片',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
+        ),
+      ],
+    );
+    if (picked.isEmpty) return;
+
+    final imported = await importForComment(
+      ref,
+      [for (final f in picked) (path: f.path, name: f.name)],
+    );
+    if (!mounted) return;
+    setState(() => _draftImages.addAll(imported));
   }
 
   Future<void> _onMenu(CardRow card, String action) async {
@@ -451,9 +540,17 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
 class _CommentTile extends StatelessWidget {
   final CommentRow comment;
+
+  /// 这条评论带的图。为空就只显示文字。
+  final List<AttachmentRow> images;
+
   final VoidCallback onDelete;
 
-  const _CommentTile({required this.comment, required this.onDelete});
+  const _CommentTile({
+    required this.comment,
+    required this.images,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -501,15 +598,112 @@ class _CommentTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 3),
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: Text(
-              comment.body,
-              style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
+          if (comment.body.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                comment.body,
+                style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
+              ),
+            ),
+          ],
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            // 排成一行缩略图，点开放大。不按原比例铺满——评论区是读
+            // 文字的地方，一张大图会把后面的评论全顶出视野。
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final image in images)
+                  _CommentImage(image: image, cardId: comment.cardId),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 还没发出去的一张草稿图：缩略图 + 一个去掉它的叉。
+class _DraftImage extends StatelessWidget {
+  final ImportedFile file;
+  final VoidCallback onRemove;
+
+  const _DraftImage({required this.file, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    final k = Theme.of(context).kanban;
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: ColoredBox(
+                color: k.hairline.withValues(alpha: 0.5),
+                child: AttachmentImage(
+                  hash: file.thumbHash ?? file.hash,
+                  fit: BoxFit.cover,
+                  placeholderHeight: 72,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: InkWell(
+              onTap: onRemove,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 13, color: Colors.white),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 评论里的一张图：缩略图，点开看大的。
+class _CommentImage extends ConsumerWidget {
+  final AttachmentRow image;
+  final String cardId;
+
+  const _CommentImage({required this.image, required this.cardId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final k = Theme.of(context).kanban;
+    return InkWell(
+      onTap: () => showImagePreview(context, image),
+      borderRadius: BorderRadius.circular(6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 92,
+          height: 92,
+          child: ColoredBox(
+            color: k.hairline.withValues(alpha: 0.5),
+            child: AttachmentImage(
+              hash: image.thumbHash ?? image.hash,
+              fit: BoxFit.cover,
+              placeholderHeight: 92,
+            ),
+          ),
+        ),
       ),
     );
   }

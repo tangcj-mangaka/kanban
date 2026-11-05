@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -89,6 +89,11 @@ class AppDatabase extends _$AppDatabase {
       // 设备收到的搬家 op，当时被当成未知字段跳过了，不补一下，这台设备
       // 上那张卡片会永远停在旧看板里。
       if (from < 7) await _replayField(Entity.card, CardF.boardId);
+      // v8：附件可以挂在评论上（评论里发图）。
+      if (from < 8) {
+        await m.addColumn(attachments, attachments.commentId);
+        await _replayField(Entity.attachment, AttachmentF.commentId);
+      }
     },
   );
 
@@ -202,6 +207,7 @@ class AppDatabase extends _$AppDatabase {
     Entity.cardTag: {CardTagF.deleted: cardTags.deleted},
     Entity.attachment: {
       AttachmentF.cardId: attachments.cardId,
+      AttachmentF.commentId: attachments.commentId,
       AttachmentF.hash: attachments.hash,
       AttachmentF.thumbHash: attachments.thumbHash,
       AttachmentF.filename: attachments.filename,

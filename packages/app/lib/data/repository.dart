@@ -28,6 +28,28 @@ class BoardSummary {
   });
 }
 
+/// 一个已经导入本地缓存、等着挂上去的文件。
+///
+/// 「导入」和「挂上去」是两步：导入算哈希、拷进缓存、生成缩略图，纯本地；
+/// 挂上去才产生 op。评论里发图需要把这两步拆开——图要先能预览，等用户
+/// 点了「发表」才和评论一起落库。
+@immutable
+class ImportedFile {
+  final String hash;
+  final String filename;
+  final int size;
+  final String mime;
+  final String? thumbHash;
+
+  const ImportedFile({
+    required this.hash,
+    required this.filename,
+    required this.size,
+    required this.mime,
+    required this.thumbHash,
+  });
+}
+
 /// 一张排过期的卡片，只带判断超时要用的那几列。
 @immutable
 class DueCard {
@@ -986,11 +1008,43 @@ class Repository {
   // -------------------------------------------------------------------------
 
   /// 某张卡片的附件，按添加时间正序。
+  /// 卡片自己的附件。**不含评论里发的图**。
+  ///
+  /// 评论里的图混进来的话，每发一条带图评论附件区就多一个条目，很快就乱；
+  /// 而且封面取的是「第一张图片附件」，评论里的图不该抢封面。
   Stream<List<AttachmentRow>> watchAttachments(String cardId) =>
       (db.select(db.attachments)
-            ..where((a) => a.cardId.equals(cardId) & a.deleted.equals(false))
+            ..where(
+              (a) =>
+                  a.cardId.equals(cardId) &
+                  a.deleted.equals(false) &
+                  a.commentId.isNull(),
+            )
             ..orderBy([(a) => OrderingTerm.asc(a.createdAt)]))
           .watch();
+
+  /// 这张卡片下每条评论各自带的图，按评论 ID 归好组。
+  ///
+  /// 一次查完再分组，比每条评论各查一次省得多——评论列表是按条渲染的。
+  Stream<Map<String, List<AttachmentRow>>> watchCommentAttachments(
+    String cardId,
+  ) =>
+      (db.select(db.attachments)
+            ..where(
+              (a) =>
+                  a.cardId.equals(cardId) &
+                  a.deleted.equals(false) &
+                  a.commentId.isNotNull(),
+            )
+            ..orderBy([(a) => OrderingTerm.asc(a.createdAt)]))
+          .watch()
+          .map((rows) {
+            final map = <String, List<AttachmentRow>>{};
+            for (final r in rows) {
+              map.putIfAbsent(r.commentId!, () => []).add(r);
+            }
+            return map;
+          });
 
   /// 把一个已经导入本地缓存的文件挂到卡片上。
   ///
@@ -1003,11 +1057,14 @@ class Repository {
     required int size,
     required String mime,
     String? thumbHash,
+    /// 挂到某条评论上而不是卡片本身。评论里发的图走这里。
+    String? commentId,
   }) async {
     final id = _uuid.v4();
     await db.transaction(() async {
       for (final change in <(String, Object?)>[
         (AttachmentF.cardId, cardId),
+        (AttachmentF.commentId, commentId),
         (AttachmentF.hash, hash),
         (AttachmentF.thumbHash, thumbHash),
         (AttachmentF.filename, filename),
@@ -1082,13 +1139,21 @@ class Repository {
     String cardId,
     String body, {
     int? createdAt,
+    /// 跟着这条评论一起发出去的图，必须是**已经导入本地缓存**的。
+    ///
+    /// 和评论在同一个事务里落库：评论是只增不改的，图只能在发表那一刻
+    /// 带上。拆成两步的话，中间失败就会留下一条没有图的评论，而评论
+    /// 又改不了。
+    List<ImportedFile> images = const [],
   }) async {
     final id = _uuid.v4();
+    final now = createdAt ?? DateTime.now().millisecondsSinceEpoch;
+
     await db.transaction(() async {
       for (final change in <(String, Object?)>[
         (CommentF.cardId, cardId),
         (CommentF.body, body),
-        (CommentF.createdAt, createdAt ?? DateTime.now().millisecondsSinceEpoch),
+        (CommentF.createdAt, now),
       ]) {
         await db.emit(
           boardId: boardId,
@@ -1098,17 +1163,61 @@ class Repository {
           value: change.$2,
         );
       }
+
+      for (final image in images) {
+        final attachmentId = _uuid.v4();
+        for (final change in <(String, Object?)>[
+          (AttachmentF.cardId, cardId),
+          (AttachmentF.commentId, id),
+          (AttachmentF.hash, image.hash),
+          (AttachmentF.thumbHash, image.thumbHash),
+          (AttachmentF.filename, image.filename),
+          (AttachmentF.size, image.size),
+          (AttachmentF.mime, image.mime),
+          (AttachmentF.createdAt, now),
+        ]) {
+          await db.emit(
+            boardId: boardId,
+            entity: Entity.attachment,
+            entityId: attachmentId,
+            field: change.$1,
+            value: change.$2,
+          );
+        }
+      }
     });
     return id;
   }
 
-  Future<void> deleteComment(String boardId, String commentId) => db.emit(
-    boardId: boardId,
-    entity: Entity.comment,
-    entityId: commentId,
-    field: CommentF.deleted,
-    value: true,
-  );
+  /// 删评论。**连它带的图一起删掉。**
+  ///
+  /// 走墓碑，磁盘上的文件不动——同一份内容可能还挂在别处，而且服务端的
+  /// 回收延迟 30 天，这期间还能后悔。
+  Future<void> deleteComment(String boardId, String commentId) async {
+    final images = await (db.select(db.attachments)..where(
+          (a) => a.commentId.equals(commentId) & a.deleted.equals(false),
+        ))
+        .get();
+
+    await db.transaction(() async {
+      for (final image in images) {
+        await db.emit(
+          boardId: boardId,
+          entity: Entity.attachment,
+          entityId: image.id,
+          field: AttachmentF.deleted,
+          value: true,
+        );
+      }
+      await db.emit(
+        boardId: boardId,
+        entity: Entity.comment,
+        entityId: commentId,
+        field: CommentF.deleted,
+        value: true,
+      );
+    });
+  }
 
   /// 每张卡片的评论数，用于画布上的角标。
   Stream<Map<String, int>> watchCommentCounts(String boardId) {

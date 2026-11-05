@@ -75,6 +75,12 @@ abstract final class CardTagF {
 
 abstract final class AttachmentF {
   static const cardId = 'card_id';
+
+  /// 这张附件属于哪条评论。为空表示它是卡片自己的附件。
+  ///
+  /// 评论里的图不进卡片的附件区，也不参与封面——否则每发一条带图评论，
+  /// 附件区就多一个条目，很快就乱。
+  static const commentId = 'comment_id';
   static const hash = 'hash';
   static const thumbHash = 'thumb_hash';
   static const filename = 'filename';

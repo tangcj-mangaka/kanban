@@ -3047,6 +3047,17 @@ class $AttachmentsTable extends Attachments
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _commentIdMeta = const VerificationMeta(
+    'commentId',
+  );
+  @override
+  late final GeneratedColumn<String> commentId = GeneratedColumn<String>(
+    'comment_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _hashMeta = const VerificationMeta('hash');
   @override
   late final GeneratedColumn<String> hash = GeneratedColumn<String>(
@@ -3131,6 +3142,7 @@ class $AttachmentsTable extends Attachments
   List<GeneratedColumn> get $columns => [
     id,
     cardId,
+    commentId,
     hash,
     thumbHash,
     filename,
@@ -3160,6 +3172,12 @@ class $AttachmentsTable extends Attachments
       context.handle(
         _cardIdMeta,
         cardId.isAcceptableOrUnknown(data['card_id']!, _cardIdMeta),
+      );
+    }
+    if (data.containsKey('comment_id')) {
+      context.handle(
+        _commentIdMeta,
+        commentId.isAcceptableOrUnknown(data['comment_id']!, _commentIdMeta),
       );
     }
     if (data.containsKey('hash')) {
@@ -3221,6 +3239,10 @@ class $AttachmentsTable extends Attachments
         DriftSqlType.string,
         data['${effectivePrefix}card_id'],
       )!,
+      commentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}comment_id'],
+      ),
       hash: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}hash'],
@@ -3262,6 +3284,12 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
   final String id;
   final String cardId;
 
+  /// 属于哪条评论。null 表示这是卡片自己的附件。
+  ///
+  /// 评论里的图走同一套附件机制（同步、按内容去重、断点续传、超期回收
+  /// 全都现成），只是多这一个字段把它们和卡片附件区分开。
+  final String? commentId;
+
   /// 文件内容的 SHA-256，同时也是服务端的存储文件名。天然去重。
   final String hash;
 
@@ -3275,6 +3303,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
   const AttachmentRow({
     required this.id,
     required this.cardId,
+    this.commentId,
     required this.hash,
     this.thumbHash,
     required this.filename,
@@ -3288,6 +3317,9 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['card_id'] = Variable<String>(cardId);
+    if (!nullToAbsent || commentId != null) {
+      map['comment_id'] = Variable<String>(commentId);
+    }
     map['hash'] = Variable<String>(hash);
     if (!nullToAbsent || thumbHash != null) {
       map['thumb_hash'] = Variable<String>(thumbHash);
@@ -3304,6 +3336,9 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     return AttachmentsCompanion(
       id: Value(id),
       cardId: Value(cardId),
+      commentId: commentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(commentId),
       hash: Value(hash),
       thumbHash: thumbHash == null && nullToAbsent
           ? const Value.absent()
@@ -3324,6 +3359,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     return AttachmentRow(
       id: serializer.fromJson<String>(json['id']),
       cardId: serializer.fromJson<String>(json['cardId']),
+      commentId: serializer.fromJson<String?>(json['commentId']),
       hash: serializer.fromJson<String>(json['hash']),
       thumbHash: serializer.fromJson<String?>(json['thumbHash']),
       filename: serializer.fromJson<String>(json['filename']),
@@ -3339,6 +3375,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'cardId': serializer.toJson<String>(cardId),
+      'commentId': serializer.toJson<String?>(commentId),
       'hash': serializer.toJson<String>(hash),
       'thumbHash': serializer.toJson<String?>(thumbHash),
       'filename': serializer.toJson<String>(filename),
@@ -3352,6 +3389,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
   AttachmentRow copyWith({
     String? id,
     String? cardId,
+    Value<String?> commentId = const Value.absent(),
     String? hash,
     Value<String?> thumbHash = const Value.absent(),
     String? filename,
@@ -3362,6 +3400,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
   }) => AttachmentRow(
     id: id ?? this.id,
     cardId: cardId ?? this.cardId,
+    commentId: commentId.present ? commentId.value : this.commentId,
     hash: hash ?? this.hash,
     thumbHash: thumbHash.present ? thumbHash.value : this.thumbHash,
     filename: filename ?? this.filename,
@@ -3374,6 +3413,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     return AttachmentRow(
       id: data.id.present ? data.id.value : this.id,
       cardId: data.cardId.present ? data.cardId.value : this.cardId,
+      commentId: data.commentId.present ? data.commentId.value : this.commentId,
       hash: data.hash.present ? data.hash.value : this.hash,
       thumbHash: data.thumbHash.present ? data.thumbHash.value : this.thumbHash,
       filename: data.filename.present ? data.filename.value : this.filename,
@@ -3389,6 +3429,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
     return (StringBuffer('AttachmentRow(')
           ..write('id: $id, ')
           ..write('cardId: $cardId, ')
+          ..write('commentId: $commentId, ')
           ..write('hash: $hash, ')
           ..write('thumbHash: $thumbHash, ')
           ..write('filename: $filename, ')
@@ -3404,6 +3445,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
   int get hashCode => Object.hash(
     id,
     cardId,
+    commentId,
     hash,
     thumbHash,
     filename,
@@ -3418,6 +3460,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
       (other is AttachmentRow &&
           other.id == this.id &&
           other.cardId == this.cardId &&
+          other.commentId == this.commentId &&
           other.hash == this.hash &&
           other.thumbHash == this.thumbHash &&
           other.filename == this.filename &&
@@ -3430,6 +3473,7 @@ class AttachmentRow extends DataClass implements Insertable<AttachmentRow> {
 class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
   final Value<String> id;
   final Value<String> cardId;
+  final Value<String?> commentId;
   final Value<String> hash;
   final Value<String?> thumbHash;
   final Value<String> filename;
@@ -3441,6 +3485,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
   const AttachmentsCompanion({
     this.id = const Value.absent(),
     this.cardId = const Value.absent(),
+    this.commentId = const Value.absent(),
     this.hash = const Value.absent(),
     this.thumbHash = const Value.absent(),
     this.filename = const Value.absent(),
@@ -3453,6 +3498,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
   AttachmentsCompanion.insert({
     required String id,
     this.cardId = const Value.absent(),
+    this.commentId = const Value.absent(),
     this.hash = const Value.absent(),
     this.thumbHash = const Value.absent(),
     this.filename = const Value.absent(),
@@ -3465,6 +3511,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
   static Insertable<AttachmentRow> custom({
     Expression<String>? id,
     Expression<String>? cardId,
+    Expression<String>? commentId,
     Expression<String>? hash,
     Expression<String>? thumbHash,
     Expression<String>? filename,
@@ -3477,6 +3524,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (cardId != null) 'card_id': cardId,
+      if (commentId != null) 'comment_id': commentId,
       if (hash != null) 'hash': hash,
       if (thumbHash != null) 'thumb_hash': thumbHash,
       if (filename != null) 'filename': filename,
@@ -3491,6 +3539,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
   AttachmentsCompanion copyWith({
     Value<String>? id,
     Value<String>? cardId,
+    Value<String?>? commentId,
     Value<String>? hash,
     Value<String?>? thumbHash,
     Value<String>? filename,
@@ -3503,6 +3552,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
     return AttachmentsCompanion(
       id: id ?? this.id,
       cardId: cardId ?? this.cardId,
+      commentId: commentId ?? this.commentId,
       hash: hash ?? this.hash,
       thumbHash: thumbHash ?? this.thumbHash,
       filename: filename ?? this.filename,
@@ -3522,6 +3572,9 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
     }
     if (cardId.present) {
       map['card_id'] = Variable<String>(cardId.value);
+    }
+    if (commentId.present) {
+      map['comment_id'] = Variable<String>(commentId.value);
     }
     if (hash.present) {
       map['hash'] = Variable<String>(hash.value);
@@ -3555,6 +3608,7 @@ class AttachmentsCompanion extends UpdateCompanion<AttachmentRow> {
     return (StringBuffer('AttachmentsCompanion(')
           ..write('id: $id, ')
           ..write('cardId: $cardId, ')
+          ..write('commentId: $commentId, ')
           ..write('hash: $hash, ')
           ..write('thumbHash: $thumbHash, ')
           ..write('filename: $filename, ')
@@ -6357,6 +6411,7 @@ typedef $$AttachmentsTableCreateCompanionBuilder =
     AttachmentsCompanion Function({
       required String id,
       Value<String> cardId,
+      Value<String?> commentId,
       Value<String> hash,
       Value<String?> thumbHash,
       Value<String> filename,
@@ -6370,6 +6425,7 @@ typedef $$AttachmentsTableUpdateCompanionBuilder =
     AttachmentsCompanion Function({
       Value<String> id,
       Value<String> cardId,
+      Value<String?> commentId,
       Value<String> hash,
       Value<String?> thumbHash,
       Value<String> filename,
@@ -6396,6 +6452,11 @@ class $$AttachmentsTableFilterComposer
 
   ColumnFilters<String> get cardId => $composableBuilder(
     column: $table.cardId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get commentId => $composableBuilder(
+    column: $table.commentId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6454,6 +6515,11 @@ class $$AttachmentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get commentId => $composableBuilder(
+    column: $table.commentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get hash => $composableBuilder(
     column: $table.hash,
     builder: (column) => ColumnOrderings(column),
@@ -6504,6 +6570,9 @@ class $$AttachmentsTableAnnotationComposer
 
   GeneratedColumn<String> get cardId =>
       $composableBuilder(column: $table.cardId, builder: (column) => column);
+
+  GeneratedColumn<String> get commentId =>
+      $composableBuilder(column: $table.commentId, builder: (column) => column);
 
   GeneratedColumn<String> get hash =>
       $composableBuilder(column: $table.hash, builder: (column) => column);
@@ -6560,6 +6629,7 @@ class $$AttachmentsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> cardId = const Value.absent(),
+                Value<String?> commentId = const Value.absent(),
                 Value<String> hash = const Value.absent(),
                 Value<String?> thumbHash = const Value.absent(),
                 Value<String> filename = const Value.absent(),
@@ -6571,6 +6641,7 @@ class $$AttachmentsTableTableManager
               }) => AttachmentsCompanion(
                 id: id,
                 cardId: cardId,
+                commentId: commentId,
                 hash: hash,
                 thumbHash: thumbHash,
                 filename: filename,
@@ -6584,6 +6655,7 @@ class $$AttachmentsTableTableManager
               ({
                 required String id,
                 Value<String> cardId = const Value.absent(),
+                Value<String?> commentId = const Value.absent(),
                 Value<String> hash = const Value.absent(),
                 Value<String?> thumbHash = const Value.absent(),
                 Value<String> filename = const Value.absent(),
@@ -6595,6 +6667,7 @@ class $$AttachmentsTableTableManager
               }) => AttachmentsCompanion.insert(
                 id: id,
                 cardId: cardId,
+                commentId: commentId,
                 hash: hash,
                 thumbHash: thumbHash,
                 filename: filename,

@@ -193,6 +193,12 @@ class Attachments extends Table {
   TextColumn get id => text()();
   TextColumn get cardId => text().withDefault(const Constant(''))();
 
+  /// 属于哪条评论。null 表示这是卡片自己的附件。
+  ///
+  /// 评论里的图走同一套附件机制（同步、按内容去重、断点续传、超期回收
+  /// 全都现成），只是多这一个字段把它们和卡片附件区分开。
+  TextColumn get commentId => text().nullable()();
+
   /// 文件内容的 SHA-256，同时也是服务端的存储文件名。天然去重。
   TextColumn get hash => text().withDefault(const Constant(''))();
 
