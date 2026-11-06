@@ -97,6 +97,17 @@ class Boards extends Table {
   /// 列表页的封面色，存色板 key（如 `"teal"`）而非十六进制值。
   TextColumn get color => text().nullable()();
 
+  /// 封面背景图。为空表示没图，方块就是纯面色——也就是加这个功能之前的样子。
+  TextColumn get coverHash => text().nullable()();
+  TextColumn get coverThumbHash => text().nullable()();
+
+  /// 图盖在面色上的不透明度、焦点和放大倍数。默认值就是「刚贴上去」的
+  /// 样子：居中、不放大、淡淡一层。
+  RealColumn get coverOpacity => real().withDefault(const Constant(0.25))();
+  RealColumn get coverFocalX => real().withDefault(const Constant(0))();
+  RealColumn get coverFocalY => real().withDefault(const Constant(0))();
+  RealColumn get coverScale => real().withDefault(const Constant(1))();
+
   RealColumn get sortOrder => real().withDefault(const Constant(0))();
   IntColumn get createdAt => integer().withDefault(const Constant(0))();
   BoolColumn get deleted => boolean().withDefault(const Constant(false))();

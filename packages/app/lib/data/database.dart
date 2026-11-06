@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
   String deviceId = 'local';
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -93,6 +93,20 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await m.addColumn(attachments, attachments.commentId);
         await _replayField(Entity.attachment, AttachmentF.commentId);
+      }
+      // v9：看板方块可以铺一张背景图。
+      if (from < 9) {
+        for (final (column, field) in <(GeneratedColumn<Object>, String)>[
+          (boards.coverHash, BoardF.coverHash),
+          (boards.coverThumbHash, BoardF.coverThumbHash),
+          (boards.coverOpacity, BoardF.coverOpacity),
+          (boards.coverFocalX, BoardF.coverFocalX),
+          (boards.coverFocalY, BoardF.coverFocalY),
+          (boards.coverScale, BoardF.coverScale),
+        ]) {
+          await m.addColumn(boards, column);
+          await _replayField(Entity.board, field);
+        }
       }
     },
   );
@@ -176,6 +190,12 @@ class AppDatabase extends _$AppDatabase {
     Entity.board: {
       BoardF.name: boards.name,
       BoardF.color: boards.color,
+      BoardF.coverHash: boards.coverHash,
+      BoardF.coverThumbHash: boards.coverThumbHash,
+      BoardF.coverOpacity: boards.coverOpacity,
+      BoardF.coverFocalX: boards.coverFocalX,
+      BoardF.coverFocalY: boards.coverFocalY,
+      BoardF.coverScale: boards.coverScale,
       BoardF.sortOrder: boards.sortOrder,
       BoardF.createdAt: boards.createdAt,
       BoardF.deleted: boards.deleted,

@@ -68,30 +68,14 @@ Future<SwatchChoice?> pickSwatch(
   return showDialog<SwatchChoice>(
     context: context,
     builder: (context) {
-      final k = Theme.of(context).kanban;
       return AlertDialog(
         title: const Text('选择颜色'),
         content: SizedBox(
           width: dialogWidth(context, 328),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              // 「无色」排在最前：它是卡片最初的样子，回到原状应该最好找。
-              if (allowNone)
-                _NoColorButton(
-                  selected: current == null,
-                  colors: k,
-                  onTap: () => Navigator.pop(context, const SwatchChoice(null)),
-                ),
-              for (final swatch in kSwatches)
-                _SwatchButton(
-                  swatch: swatch,
-                  selected: swatch.key == current,
-                  colors: k,
-                  onTap: () => Navigator.pop(context, SwatchChoice(swatch.key)),
-                ),
-            ],
+          child: SwatchGrid(
+            current: current,
+            allowNone: allowNone,
+            onPick: (key) => Navigator.pop(context, SwatchChoice(key)),
           ),
         ),
         actions: [
@@ -100,6 +84,48 @@ Future<SwatchChoice?> pickSwatch(
       );
     },
   );
+}
+
+/// 色板本身，不带对话框外壳。
+///
+/// 「改封面」把颜色和背景图放在同一个对话框里调，所以这块得能单独摆出来。
+/// [onPick] 的参数为 null 表示选了「无色」。
+class SwatchGrid extends StatelessWidget {
+  final String? current;
+  final bool allowNone;
+  final ValueChanged<String?> onPick;
+
+  const SwatchGrid({
+    super.key,
+    required this.current,
+    required this.onPick,
+    this.allowNone = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final k = Theme.of(context).kanban;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        // 「无色」排在最前：它是卡片最初的样子，回到原状应该最好找。
+        if (allowNone)
+          _NoColorButton(
+            selected: current == null,
+            colors: k,
+            onTap: () => onPick(null),
+          ),
+        for (final swatch in kSwatches)
+          _SwatchButton(
+            swatch: swatch,
+            selected: swatch.key == current,
+            colors: k,
+            onTap: () => onPick(swatch.key),
+          ),
+      ],
+    );
+  }
 }
 
 /// 「无色」那一格：一个带斜杠的空心圆。

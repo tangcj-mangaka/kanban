@@ -24,6 +24,33 @@ abstract final class BoardF {
   static const sortOrder = 'sort_order';
   static const createdAt = 'created_at';
   static const deleted = kDeleted;
+
+  /// 封面背景图的内容哈希。为空表示没有图，方块就是纯面色。
+  ///
+  /// 走的是附件那套通道（内容寻址、HTTP 传输、按哈希去重），但**不是**
+  /// 一条附件记录——它不属于任何卡片，也不该出现在任何附件列表里。
+  ///
+  /// 代价是服务端的回收要额外认这两个字段：它判断「文件还有没有人要」
+  /// 时只扫 attachment 实体，不改的话封面图会被当成孤儿，三十天后删掉。
+  /// 见服务端 `referencedHashes()`。
+  static const coverHash = 'cover_hash';
+  static const coverThumbHash = 'cover_thumb_hash';
+
+  /// 图盖在面色上的不透明度。
+  ///
+  /// 面色始终留在最底下，图只是盖在上面的一层——文字颜色是按面色算的，
+  /// 有它兜着对比度才有下限。
+  static const coverOpacity = 'cover_opacity';
+
+  /// 焦点：图的哪个点要对准方块中心，两个 -1~1 的数，(0,0) 是居中。
+  ///
+  /// 存焦点而不是裁切框：方块的长宽比两端不一样（电脑上 1.75:1，手机上
+  /// 接近 3:1），存死的像素矩形到了另一端还得再裁一次，等于白存。
+  static const coverFocalX = 'cover_focal_x';
+  static const coverFocalY = 'cover_focal_y';
+
+  /// 在「刚好填满」的基础上再放大多少倍。1.0 就是刚好填满。
+  static const coverScale = 'cover_scale';
 }
 
 abstract final class TagF {

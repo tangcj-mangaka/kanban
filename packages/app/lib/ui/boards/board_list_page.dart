@@ -13,6 +13,8 @@ import '../transitions.dart';
 import '../theme/donkey_icon.dart';
 import '../board/board_page.dart';
 import '../sync/sync_status_chip.dart';
+import 'board_cover.dart';
+import 'board_cover_dialog.dart';
 import 'board_dialogs.dart';
 import 'deleted_boards_dialog.dart';
 import 'trello_import_dialog.dart';
@@ -233,7 +235,7 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
         // 手机上不做拖动排序：长按拖拽会和列表滚动抢手势，
         // 而排看板顺序是坐在电脑前才会干的事。
         itemBuilder: (_, i) =>
-            _BoardTile(summary: widget.boards[i], compact: true),
+            BoardTile(summary: widget.boards[i], compact: true),
       );
     }
 
@@ -263,7 +265,7 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
           },
           builder: (context, candidate, _) => LayoutBuilder(
             builder: (context, constraints) {
-              final tile = _BoardTile(summary: summary);
+              final tile = BoardTile(summary: summary);
               final showDropHint = _hoverIndex == i && candidate.isNotEmpty;
 
               return Stack(
@@ -334,7 +336,7 @@ class _BoardGridState extends ConsumerState<_BoardGrid> {
 ///
 /// 底色直接用该看板的封面色，画的就是卡片在画布上的样子——列表页顺带
 /// 成了配色预览，不用另做一套视觉。
-class _BoardTile extends ConsumerStatefulWidget {
+class BoardTile extends ConsumerStatefulWidget {
   final BoardSummary summary;
 
   /// 列表模式（手机）：高度由内容撑，不用 Expanded 占位。
@@ -343,13 +345,24 @@ class _BoardTile extends ConsumerStatefulWidget {
   /// 列表模式下没有固定高度，Expanded 会因为约束无限而直接报错。
   final bool compact;
 
-  const _BoardTile({required this.summary, this.compact = false});
+  /// 当样品用：不响应悬停、不出菜单、点了也不进看板。
+  ///
+  /// 「改封面」对话框里摆的就是一块真方块——同一个组件、同一套绘制，
+  /// 所以调出来什么样，回到列表页就是什么样。另画一个预览迟早会走样。
+  final bool preview;
+
+  const BoardTile({
+    super.key,
+    required this.summary,
+    this.compact = false,
+    this.preview = false,
+  });
 
   @override
-  ConsumerState<_BoardTile> createState() => _BoardTileState();
+  ConsumerState<BoardTile> createState() => BoardTileState();
 }
 
-class _BoardTileState extends ConsumerState<_BoardTile> {
+class BoardTileState extends ConsumerState<BoardTile> {
   bool _hover = false;
 
   @override
@@ -361,11 +374,14 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
     final accent = k.accent(board.color);
     final compactTile = widget.compact;
     final overdue = ref.watch(overdueCountsProvider)[board.id] ?? 0;
+    final cover = BoardCoverSpec.fromBoard(board);
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
+      onEnter: widget.preview ? null : (_) => setState(() => _hover = true),
+      onExit: widget.preview ? null : (_) => setState(() => _hover = false),
+      cursor: widget.preview
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOut,
@@ -383,11 +399,22 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
                 ]
               : null,
         ),
-        child: Material(
+        // 背景图铺在面色之上、内容之下。面色不去掉——文字颜色是按它算的，
+        // 有它兜着，不管贴上去的是什么图，对比度都有下限。
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              if (!cover.isEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(child: BoardCoverLayer(spec: cover)),
+                ),
+              Material(
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => _openBoard(context),
+            onTap: widget.preview ? null : () => _openBoard(context),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(15, 14, 9, 13),
               child: Column(
@@ -420,11 +447,15 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
                           ),
                         ),
                       ),
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: _hover ? 1 : 0,
-                        child: _BoardMenu(board: board),
-                      ),
+                      if (!widget.preview)
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 120),
+                          opacity: _hover ? 1 : 0,
+                          child: _BoardMenu(summary: widget.summary),
+                        )
+                      else
+                        // 占住菜单的位置，预览里的标题换行点才和真方块一致。
+                        const SizedBox(width: 30, height: 30),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -492,6 +523,9 @@ class _BoardTileState extends ConsumerState<_BoardTile> {
                 ],
               ),
             ),
+          ),
+              ),
+            ],
           ),
         ),
       ),
@@ -575,9 +609,11 @@ class _TagPreview extends ConsumerWidget {
 }
 
 class _BoardMenu extends ConsumerWidget {
-  final BoardRow board;
+  final BoardSummary summary;
 
-  const _BoardMenu({required this.board});
+  const _BoardMenu({required this.summary});
+
+  BoardRow get board => summary.board;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -594,7 +630,8 @@ class _BoardMenu extends ConsumerWidget {
         ),
         itemBuilder: (_) => const [
           PopupMenuItem(value: 'rename', child: Text('重命名')),
-          PopupMenuItem(value: 'color', child: Text('改封面色')),
+          // 面色和背景图是叠着看的，所以合在一个对话框里调。
+          PopupMenuItem(value: 'cover', child: Text('改封面')),
           PopupMenuDivider(),
           // 「这块板在我这儿有，别的设备上死活不出现」的出口。
           PopupMenuItem(value: 'repush', child: Text('重新推送到服务器')),
@@ -618,9 +655,9 @@ class _BoardMenu extends ConsumerWidget {
         if (name != null) await repo.renameBoard(board.id, name);
       case 'repush':
         await _repush(context, ref);
-      case 'color':
-        final choice = await pickSwatch(context, current: board.color);
-        if (choice != null) await repo.setBoardColor(board.id, choice.key);
+      case 'cover':
+        if (!context.mounted) return;
+        await showBoardCoverDialog(context, ref, summary);
       case 'delete':
         final ok = await confirmDeleteBoard(context, board.name);
         if (ok) await repo.deleteBoard(board.id);
@@ -739,7 +776,7 @@ class _SearchResults extends ConsumerWidget {
             ),
             itemCount: boards.length,
             // 搜索结果里不排序拖动——拖的是过滤后的子集，落位含义不清楚。
-            itemBuilder: (_, i) => _BoardTile(summary: boards[i]),
+            itemBuilder: (_, i) => BoardTile(summary: boards[i]),
           ),
           const SizedBox(height: 26),
         ],

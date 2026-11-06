@@ -35,6 +35,53 @@ void main() {
     expect(await repo.watchAttachments(cardId).first, isEmpty);
   });
 
+  test('评论里的图不参与封面', () async {
+    // 封面取的是「这张卡片下最早的那张图」。评论的图要是也算在内，
+    // 发一条带图评论就可能把卡片的脸换掉——而且想换回来只能去删评论。
+    //
+    // 这里故意让评论的图**更早**：按时间先后它本来会赢。
+    await repo.addComment(boardId, cardId, '先发的评论', images: [image('a')]);
+    await repo.addAttachment(
+      boardId: boardId,
+      cardId: cardId,
+      hash: 'card-file',
+      filename: 'cover.png',
+      size: 1,
+      mime: 'image/png',
+      thumbHash: null,
+    );
+
+    final covers = await repo.watchCardCovers(boardId).first;
+    expect(covers[cardId]?.hash, 'card-file');
+  });
+
+  test('只有评论里有图时，卡片仍然没有封面', () async {
+    await repo.addComment(boardId, cardId, '只有评论图', images: [image('a')]);
+    expect(await repo.watchCardCovers(boardId).first, isEmpty);
+  });
+
+  test('回形针角标不数评论里的图', () async {
+    // 评论里的图已经被评论角标代表了，回形针再数一遍就是同一件事报两次。
+    await repo.addAttachment(
+      boardId: boardId,
+      cardId: cardId,
+      hash: 'card-file',
+      filename: 'a.pdf',
+      size: 1,
+      mime: 'application/pdf',
+      thumbHash: null,
+    );
+    await repo.addComment(
+      boardId,
+      cardId,
+      '带两张图',
+      images: [image('a'), image('b')],
+    );
+
+    final counts = await repo.watchAttachmentCounts(boardId).first;
+    expect(counts[cardId], 1);
+  });
+
   test('卡片自己的附件照常出现在附件区', () async {
     await repo.addAttachment(
       boardId: boardId,

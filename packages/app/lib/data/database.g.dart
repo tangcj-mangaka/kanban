@@ -1018,6 +1018,76 @@ class $BoardsTable extends Boards with TableInfo<$BoardsTable, BoardRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _coverHashMeta = const VerificationMeta(
+    'coverHash',
+  );
+  @override
+  late final GeneratedColumn<String> coverHash = GeneratedColumn<String>(
+    'cover_hash',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverThumbHashMeta = const VerificationMeta(
+    'coverThumbHash',
+  );
+  @override
+  late final GeneratedColumn<String> coverThumbHash = GeneratedColumn<String>(
+    'cover_thumb_hash',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverOpacityMeta = const VerificationMeta(
+    'coverOpacity',
+  );
+  @override
+  late final GeneratedColumn<double> coverOpacity = GeneratedColumn<double>(
+    'cover_opacity',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.25),
+  );
+  static const VerificationMeta _coverFocalXMeta = const VerificationMeta(
+    'coverFocalX',
+  );
+  @override
+  late final GeneratedColumn<double> coverFocalX = GeneratedColumn<double>(
+    'cover_focal_x',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _coverFocalYMeta = const VerificationMeta(
+    'coverFocalY',
+  );
+  @override
+  late final GeneratedColumn<double> coverFocalY = GeneratedColumn<double>(
+    'cover_focal_y',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _coverScaleMeta = const VerificationMeta(
+    'coverScale',
+  );
+  @override
+  late final GeneratedColumn<double> coverScale = GeneratedColumn<double>(
+    'cover_scale',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -1062,6 +1132,12 @@ class $BoardsTable extends Boards with TableInfo<$BoardsTable, BoardRow> {
     id,
     name,
     color,
+    coverHash,
+    coverThumbHash,
+    coverOpacity,
+    coverFocalX,
+    coverFocalY,
+    coverScale,
     sortOrder,
     createdAt,
     deleted,
@@ -1093,6 +1169,54 @@ class $BoardsTable extends Boards with TableInfo<$BoardsTable, BoardRow> {
       context.handle(
         _colorMeta,
         color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
+    }
+    if (data.containsKey('cover_hash')) {
+      context.handle(
+        _coverHashMeta,
+        coverHash.isAcceptableOrUnknown(data['cover_hash']!, _coverHashMeta),
+      );
+    }
+    if (data.containsKey('cover_thumb_hash')) {
+      context.handle(
+        _coverThumbHashMeta,
+        coverThumbHash.isAcceptableOrUnknown(
+          data['cover_thumb_hash']!,
+          _coverThumbHashMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cover_opacity')) {
+      context.handle(
+        _coverOpacityMeta,
+        coverOpacity.isAcceptableOrUnknown(
+          data['cover_opacity']!,
+          _coverOpacityMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cover_focal_x')) {
+      context.handle(
+        _coverFocalXMeta,
+        coverFocalX.isAcceptableOrUnknown(
+          data['cover_focal_x']!,
+          _coverFocalXMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cover_focal_y')) {
+      context.handle(
+        _coverFocalYMeta,
+        coverFocalY.isAcceptableOrUnknown(
+          data['cover_focal_y']!,
+          _coverFocalYMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cover_scale')) {
+      context.handle(
+        _coverScaleMeta,
+        coverScale.isAcceptableOrUnknown(data['cover_scale']!, _coverScaleMeta),
       );
     }
     if (data.containsKey('sort_order')) {
@@ -1134,6 +1258,30 @@ class $BoardsTable extends Boards with TableInfo<$BoardsTable, BoardRow> {
         DriftSqlType.string,
         data['${effectivePrefix}color'],
       ),
+      coverHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_hash'],
+      ),
+      coverThumbHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_thumb_hash'],
+      ),
+      coverOpacity: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}cover_opacity'],
+      )!,
+      coverFocalX: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}cover_focal_x'],
+      )!,
+      coverFocalY: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}cover_focal_y'],
+      )!,
+      coverScale: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}cover_scale'],
+      )!,
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}sort_order'],
@@ -1161,6 +1309,17 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
 
   /// 列表页的封面色，存色板 key（如 `"teal"`）而非十六进制值。
   final String? color;
+
+  /// 封面背景图。为空表示没图，方块就是纯面色——也就是加这个功能之前的样子。
+  final String? coverHash;
+  final String? coverThumbHash;
+
+  /// 图盖在面色上的不透明度、焦点和放大倍数。默认值就是「刚贴上去」的
+  /// 样子：居中、不放大、淡淡一层。
+  final double coverOpacity;
+  final double coverFocalX;
+  final double coverFocalY;
+  final double coverScale;
   final double sortOrder;
   final int createdAt;
   final bool deleted;
@@ -1168,6 +1327,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
     required this.id,
     required this.name,
     this.color,
+    this.coverHash,
+    this.coverThumbHash,
+    required this.coverOpacity,
+    required this.coverFocalX,
+    required this.coverFocalY,
+    required this.coverScale,
     required this.sortOrder,
     required this.createdAt,
     required this.deleted,
@@ -1180,6 +1345,16 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
     if (!nullToAbsent || color != null) {
       map['color'] = Variable<String>(color);
     }
+    if (!nullToAbsent || coverHash != null) {
+      map['cover_hash'] = Variable<String>(coverHash);
+    }
+    if (!nullToAbsent || coverThumbHash != null) {
+      map['cover_thumb_hash'] = Variable<String>(coverThumbHash);
+    }
+    map['cover_opacity'] = Variable<double>(coverOpacity);
+    map['cover_focal_x'] = Variable<double>(coverFocalX);
+    map['cover_focal_y'] = Variable<double>(coverFocalY);
+    map['cover_scale'] = Variable<double>(coverScale);
     map['sort_order'] = Variable<double>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     map['deleted'] = Variable<bool>(deleted);
@@ -1193,6 +1368,16 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
       color: color == null && nullToAbsent
           ? const Value.absent()
           : Value(color),
+      coverHash: coverHash == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverHash),
+      coverThumbHash: coverThumbHash == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverThumbHash),
+      coverOpacity: Value(coverOpacity),
+      coverFocalX: Value(coverFocalX),
+      coverFocalY: Value(coverFocalY),
+      coverScale: Value(coverScale),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       deleted: Value(deleted),
@@ -1208,6 +1393,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       color: serializer.fromJson<String?>(json['color']),
+      coverHash: serializer.fromJson<String?>(json['coverHash']),
+      coverThumbHash: serializer.fromJson<String?>(json['coverThumbHash']),
+      coverOpacity: serializer.fromJson<double>(json['coverOpacity']),
+      coverFocalX: serializer.fromJson<double>(json['coverFocalX']),
+      coverFocalY: serializer.fromJson<double>(json['coverFocalY']),
+      coverScale: serializer.fromJson<double>(json['coverScale']),
       sortOrder: serializer.fromJson<double>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       deleted: serializer.fromJson<bool>(json['deleted']),
@@ -1220,6 +1411,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'color': serializer.toJson<String?>(color),
+      'coverHash': serializer.toJson<String?>(coverHash),
+      'coverThumbHash': serializer.toJson<String?>(coverThumbHash),
+      'coverOpacity': serializer.toJson<double>(coverOpacity),
+      'coverFocalX': serializer.toJson<double>(coverFocalX),
+      'coverFocalY': serializer.toJson<double>(coverFocalY),
+      'coverScale': serializer.toJson<double>(coverScale),
       'sortOrder': serializer.toJson<double>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
       'deleted': serializer.toJson<bool>(deleted),
@@ -1230,6 +1427,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
     String? id,
     String? name,
     Value<String?> color = const Value.absent(),
+    Value<String?> coverHash = const Value.absent(),
+    Value<String?> coverThumbHash = const Value.absent(),
+    double? coverOpacity,
+    double? coverFocalX,
+    double? coverFocalY,
+    double? coverScale,
     double? sortOrder,
     int? createdAt,
     bool? deleted,
@@ -1237,6 +1440,14 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
     id: id ?? this.id,
     name: name ?? this.name,
     color: color.present ? color.value : this.color,
+    coverHash: coverHash.present ? coverHash.value : this.coverHash,
+    coverThumbHash: coverThumbHash.present
+        ? coverThumbHash.value
+        : this.coverThumbHash,
+    coverOpacity: coverOpacity ?? this.coverOpacity,
+    coverFocalX: coverFocalX ?? this.coverFocalX,
+    coverFocalY: coverFocalY ?? this.coverFocalY,
+    coverScale: coverScale ?? this.coverScale,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
     deleted: deleted ?? this.deleted,
@@ -1246,6 +1457,22 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       color: data.color.present ? data.color.value : this.color,
+      coverHash: data.coverHash.present ? data.coverHash.value : this.coverHash,
+      coverThumbHash: data.coverThumbHash.present
+          ? data.coverThumbHash.value
+          : this.coverThumbHash,
+      coverOpacity: data.coverOpacity.present
+          ? data.coverOpacity.value
+          : this.coverOpacity,
+      coverFocalX: data.coverFocalX.present
+          ? data.coverFocalX.value
+          : this.coverFocalX,
+      coverFocalY: data.coverFocalY.present
+          ? data.coverFocalY.value
+          : this.coverFocalY,
+      coverScale: data.coverScale.present
+          ? data.coverScale.value
+          : this.coverScale,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       deleted: data.deleted.present ? data.deleted.value : this.deleted,
@@ -1258,6 +1485,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('color: $color, ')
+          ..write('coverHash: $coverHash, ')
+          ..write('coverThumbHash: $coverThumbHash, ')
+          ..write('coverOpacity: $coverOpacity, ')
+          ..write('coverFocalX: $coverFocalX, ')
+          ..write('coverFocalY: $coverFocalY, ')
+          ..write('coverScale: $coverScale, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('deleted: $deleted')
@@ -1266,8 +1499,20 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, color, sortOrder, createdAt, deleted);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    color,
+    coverHash,
+    coverThumbHash,
+    coverOpacity,
+    coverFocalX,
+    coverFocalY,
+    coverScale,
+    sortOrder,
+    createdAt,
+    deleted,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1275,6 +1520,12 @@ class BoardRow extends DataClass implements Insertable<BoardRow> {
           other.id == this.id &&
           other.name == this.name &&
           other.color == this.color &&
+          other.coverHash == this.coverHash &&
+          other.coverThumbHash == this.coverThumbHash &&
+          other.coverOpacity == this.coverOpacity &&
+          other.coverFocalX == this.coverFocalX &&
+          other.coverFocalY == this.coverFocalY &&
+          other.coverScale == this.coverScale &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.deleted == this.deleted);
@@ -1284,6 +1535,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
   final Value<String> id;
   final Value<String> name;
   final Value<String?> color;
+  final Value<String?> coverHash;
+  final Value<String?> coverThumbHash;
+  final Value<double> coverOpacity;
+  final Value<double> coverFocalX;
+  final Value<double> coverFocalY;
+  final Value<double> coverScale;
   final Value<double> sortOrder;
   final Value<int> createdAt;
   final Value<bool> deleted;
@@ -1292,6 +1549,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.color = const Value.absent(),
+    this.coverHash = const Value.absent(),
+    this.coverThumbHash = const Value.absent(),
+    this.coverOpacity = const Value.absent(),
+    this.coverFocalX = const Value.absent(),
+    this.coverFocalY = const Value.absent(),
+    this.coverScale = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.deleted = const Value.absent(),
@@ -1301,6 +1564,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
     required String id,
     this.name = const Value.absent(),
     this.color = const Value.absent(),
+    this.coverHash = const Value.absent(),
+    this.coverThumbHash = const Value.absent(),
+    this.coverOpacity = const Value.absent(),
+    this.coverFocalX = const Value.absent(),
+    this.coverFocalY = const Value.absent(),
+    this.coverScale = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.deleted = const Value.absent(),
@@ -1310,6 +1579,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? color,
+    Expression<String>? coverHash,
+    Expression<String>? coverThumbHash,
+    Expression<double>? coverOpacity,
+    Expression<double>? coverFocalX,
+    Expression<double>? coverFocalY,
+    Expression<double>? coverScale,
     Expression<double>? sortOrder,
     Expression<int>? createdAt,
     Expression<bool>? deleted,
@@ -1319,6 +1594,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (color != null) 'color': color,
+      if (coverHash != null) 'cover_hash': coverHash,
+      if (coverThumbHash != null) 'cover_thumb_hash': coverThumbHash,
+      if (coverOpacity != null) 'cover_opacity': coverOpacity,
+      if (coverFocalX != null) 'cover_focal_x': coverFocalX,
+      if (coverFocalY != null) 'cover_focal_y': coverFocalY,
+      if (coverScale != null) 'cover_scale': coverScale,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (deleted != null) 'deleted': deleted,
@@ -1330,6 +1611,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
     Value<String>? id,
     Value<String>? name,
     Value<String?>? color,
+    Value<String?>? coverHash,
+    Value<String?>? coverThumbHash,
+    Value<double>? coverOpacity,
+    Value<double>? coverFocalX,
+    Value<double>? coverFocalY,
+    Value<double>? coverScale,
     Value<double>? sortOrder,
     Value<int>? createdAt,
     Value<bool>? deleted,
@@ -1339,6 +1626,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
       id: id ?? this.id,
       name: name ?? this.name,
       color: color ?? this.color,
+      coverHash: coverHash ?? this.coverHash,
+      coverThumbHash: coverThumbHash ?? this.coverThumbHash,
+      coverOpacity: coverOpacity ?? this.coverOpacity,
+      coverFocalX: coverFocalX ?? this.coverFocalX,
+      coverFocalY: coverFocalY ?? this.coverFocalY,
+      coverScale: coverScale ?? this.coverScale,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       deleted: deleted ?? this.deleted,
@@ -1357,6 +1650,24 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
     }
     if (color.present) {
       map['color'] = Variable<String>(color.value);
+    }
+    if (coverHash.present) {
+      map['cover_hash'] = Variable<String>(coverHash.value);
+    }
+    if (coverThumbHash.present) {
+      map['cover_thumb_hash'] = Variable<String>(coverThumbHash.value);
+    }
+    if (coverOpacity.present) {
+      map['cover_opacity'] = Variable<double>(coverOpacity.value);
+    }
+    if (coverFocalX.present) {
+      map['cover_focal_x'] = Variable<double>(coverFocalX.value);
+    }
+    if (coverFocalY.present) {
+      map['cover_focal_y'] = Variable<double>(coverFocalY.value);
+    }
+    if (coverScale.present) {
+      map['cover_scale'] = Variable<double>(coverScale.value);
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<double>(sortOrder.value);
@@ -1379,6 +1690,12 @@ class BoardsCompanion extends UpdateCompanion<BoardRow> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('color: $color, ')
+          ..write('coverHash: $coverHash, ')
+          ..write('coverThumbHash: $coverThumbHash, ')
+          ..write('coverOpacity: $coverOpacity, ')
+          ..write('coverFocalX: $coverFocalX, ')
+          ..write('coverFocalY: $coverFocalY, ')
+          ..write('coverScale: $coverScale, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('deleted: $deleted, ')
@@ -5389,6 +5706,12 @@ typedef $$BoardsTableCreateCompanionBuilder =
       required String id,
       Value<String> name,
       Value<String?> color,
+      Value<String?> coverHash,
+      Value<String?> coverThumbHash,
+      Value<double> coverOpacity,
+      Value<double> coverFocalX,
+      Value<double> coverFocalY,
+      Value<double> coverScale,
       Value<double> sortOrder,
       Value<int> createdAt,
       Value<bool> deleted,
@@ -5399,6 +5722,12 @@ typedef $$BoardsTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<String?> color,
+      Value<String?> coverHash,
+      Value<String?> coverThumbHash,
+      Value<double> coverOpacity,
+      Value<double> coverFocalX,
+      Value<double> coverFocalY,
+      Value<double> coverScale,
       Value<double> sortOrder,
       Value<int> createdAt,
       Value<bool> deleted,
@@ -5426,6 +5755,36 @@ class $$BoardsTableFilterComposer
 
   ColumnFilters<String> get color => $composableBuilder(
     column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverHash => $composableBuilder(
+    column: $table.coverHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverThumbHash => $composableBuilder(
+    column: $table.coverThumbHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get coverOpacity => $composableBuilder(
+    column: $table.coverOpacity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get coverFocalX => $composableBuilder(
+    column: $table.coverFocalX,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get coverFocalY => $composableBuilder(
+    column: $table.coverFocalY,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get coverScale => $composableBuilder(
+    column: $table.coverScale,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5469,6 +5828,36 @@ class $$BoardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get coverHash => $composableBuilder(
+    column: $table.coverHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverThumbHash => $composableBuilder(
+    column: $table.coverThumbHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get coverOpacity => $composableBuilder(
+    column: $table.coverOpacity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get coverFocalX => $composableBuilder(
+    column: $table.coverFocalX,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get coverFocalY => $composableBuilder(
+    column: $table.coverFocalY,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get coverScale => $composableBuilder(
+    column: $table.coverScale,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -5502,6 +5891,34 @@ class $$BoardsTableAnnotationComposer
 
   GeneratedColumn<String> get color =>
       $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<String> get coverHash =>
+      $composableBuilder(column: $table.coverHash, builder: (column) => column);
+
+  GeneratedColumn<String> get coverThumbHash => $composableBuilder(
+    column: $table.coverThumbHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get coverOpacity => $composableBuilder(
+    column: $table.coverOpacity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get coverFocalX => $composableBuilder(
+    column: $table.coverFocalX,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get coverFocalY => $composableBuilder(
+    column: $table.coverFocalY,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get coverScale => $composableBuilder(
+    column: $table.coverScale,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<double> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -5544,6 +5961,12 @@ class $$BoardsTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<String?> coverHash = const Value.absent(),
+                Value<String?> coverThumbHash = const Value.absent(),
+                Value<double> coverOpacity = const Value.absent(),
+                Value<double> coverFocalX = const Value.absent(),
+                Value<double> coverFocalY = const Value.absent(),
+                Value<double> coverScale = const Value.absent(),
                 Value<double> sortOrder = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
@@ -5552,6 +5975,12 @@ class $$BoardsTableTableManager
                 id: id,
                 name: name,
                 color: color,
+                coverHash: coverHash,
+                coverThumbHash: coverThumbHash,
+                coverOpacity: coverOpacity,
+                coverFocalX: coverFocalX,
+                coverFocalY: coverFocalY,
+                coverScale: coverScale,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 deleted: deleted,
@@ -5562,6 +5991,12 @@ class $$BoardsTableTableManager
                 required String id,
                 Value<String> name = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<String?> coverHash = const Value.absent(),
+                Value<String?> coverThumbHash = const Value.absent(),
+                Value<double> coverOpacity = const Value.absent(),
+                Value<double> coverFocalX = const Value.absent(),
+                Value<double> coverFocalY = const Value.absent(),
+                Value<double> coverScale = const Value.absent(),
                 Value<double> sortOrder = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
@@ -5570,6 +6005,12 @@ class $$BoardsTableTableManager
                 id: id,
                 name: name,
                 color: color,
+                coverHash: coverHash,
+                coverThumbHash: coverThumbHash,
+                coverOpacity: coverOpacity,
+                coverFocalX: coverFocalX,
+                coverFocalY: coverFocalY,
+                coverScale: coverScale,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 deleted: deleted,

@@ -244,25 +244,39 @@ class Store {
   /// 服务端自己的职责——它得知道哪些文件还有人要，否则要么永远不删（磁盘
   /// 撑爆），要么删错（附件凭空消失）。
   ///
-  /// 做法仍然只依赖 op log：对每个附件实体取每个字段最新的那条 op，
-  /// 未被标删的实体，它的 hash 和 thumb_hash 就是还在用的。
+  /// 做法仍然只依赖 op log：对每个实体取每个字段最新的那条 op，
+  /// 未被标删的实体，它那几个装哈希的字段就是还在用的。
+  ///
+  /// 两类引用：
+  /// - 附件（`attachment`）的 `hash` / `thumb_hash`
+  /// - 看板（`board`）的 `cover_hash` / `cover_thumb_hash` —— 方块的背景图
+  ///
+  /// **第二类是后加的，漏了不会立刻坏。** 封面图没被算成「有人要」的话，
+  /// 它会安安静静地待在孤儿名单里，一个月后才被删掉——那时谁也想不到是
+  /// 这里的问题。所以客户端支持封面图的版本，服务端必须一起换。
   Set<String> referencedHashes() {
     final rows = _db.select('''
       WITH ranked AS (
-        SELECT entity_id, field, value_json,
+        SELECT entity, entity_id, field, value_json,
                ROW_NUMBER() OVER (
-                 PARTITION BY entity_id, field ORDER BY seq DESC
+                 PARTITION BY entity, entity_id, field ORDER BY seq DESC
                ) AS rn
-        FROM ops WHERE entity = 'attachment'
+        FROM ops WHERE entity IN ('attachment', 'board')
       ),
       latest AS (
-        SELECT entity_id, field, value_json FROM ranked WHERE rn = 1
+        SELECT entity, entity_id, field, value_json FROM ranked WHERE rn = 1
       )
       SELECT l.value_json AS v FROM latest l
-      WHERE l.field IN ('hash', 'thumb_hash')
+      WHERE (
+          (l.entity = 'attachment' AND l.field IN ('hash', 'thumb_hash'))
+          OR (l.entity = 'board'
+              AND l.field IN ('cover_hash', 'cover_thumb_hash'))
+        )
         AND COALESCE(
               (SELECT d.value_json FROM latest d
-               WHERE d.entity_id = l.entity_id AND d.field = 'deleted'),
+               WHERE d.entity = l.entity
+                 AND d.entity_id = l.entity_id
+                 AND d.field = 'deleted'),
               'false'
             ) != 'true'
     ''');

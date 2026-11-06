@@ -12,6 +12,18 @@ import 'database.dart';
 const _uuid = Uuid();
 final _random = Random();
 
+/// 封面图盖在面色上的不透明度范围。
+///
+/// 上限卡在 0.6：再浓下去，一张亮照片配浅色主题就开始吃字了。下限 0.1
+/// 是「几乎看不见但确实有」，再淡不如直接去掉图。
+const double kCoverOpacityMin = 0.1;
+const double kCoverOpacityMax = 0.6;
+const double kCoverOpacityDefault = 0.25;
+
+/// 封面图的放大倍数范围。1.0 是刚好填满方块，再小会露出空边。
+const double kCoverScaleMin = 1;
+const double kCoverScaleMax = 3;
+
 /// 看板列表页要显示的一行。
 @immutable
 class BoardSummary {
@@ -219,6 +231,51 @@ class Repository {
     field: BoardF.color,
     value: colorKey,
   );
+
+  /// 看板封面图。[hash] 为 null 表示去掉图，顺手把位置参数也恢复成默认。
+  ///
+  /// 六个字段一次写完，不拆成「先换图、再调位置」两次——拆开的话，图换了
+  /// 位置还没写的那一瞬间会同步出去，别的设备上会闪一下旧焦点配新图。
+  ///
+  /// 数值都在这里夹紧，不信任调用方：这些值会同步到别的设备，一个越界的
+  /// 倍数能把那台机器上的方块撑成一片糊。
+  Future<void> setBoardCover(
+    String id, {
+    required String? hash,
+    String? thumbHash,
+    double opacity = kCoverOpacityDefault,
+    double focalX = 0,
+    double focalY = 0,
+    double scale = 1,
+  }) async {
+    final cleared = hash == null;
+    await db.transaction(() async {
+      for (final change in <(String, Object?)>[
+        (BoardF.coverHash, hash),
+        (BoardF.coverThumbHash, cleared ? null : thumbHash),
+        (
+          BoardF.coverOpacity,
+          cleared
+              ? kCoverOpacityDefault
+              : opacity.clamp(kCoverOpacityMin, kCoverOpacityMax),
+        ),
+        (BoardF.coverFocalX, cleared ? 0.0 : focalX.clamp(-1.0, 1.0)),
+        (BoardF.coverFocalY, cleared ? 0.0 : focalY.clamp(-1.0, 1.0)),
+        (
+          BoardF.coverScale,
+          cleared ? 1.0 : scale.clamp(kCoverScaleMin, kCoverScaleMax),
+        ),
+      ]) {
+        await db.emit(
+          boardId: id,
+          entity: Entity.board,
+          entityId: id,
+          field: change.$1,
+          value: change.$2,
+        );
+      }
+    });
+  }
 
   /// 删除看板。走墓碑，不做物理删除。
   ///
@@ -875,7 +932,11 @@ class Repository {
         db.cards.boardId.equals(boardId) &
             db.attachments.deleted.equals(false) &
             db.cards.deleted.equals(false) &
-            db.attachments.mime.like('image/%'),
+            db.attachments.mime.like('image/%') &
+            // 评论里发的图不参与封面。少了这一句，封面就变成「这张卡片
+            // 下最早的那张图」——发一条带图评论就可能把卡片的脸换掉，
+            // 而想换回来只能去删那条评论。
+            db.attachments.commentId.isNull(),
       )
       ..orderBy([OrderingTerm.asc(db.attachments.createdAt)]);
 
@@ -1104,7 +1165,10 @@ class Repository {
           ..addColumns([db.attachments.cardId, count])
           ..where(
             db.cards.boardId.equals(boardId) &
-                db.attachments.deleted.equals(false),
+                db.attachments.deleted.equals(false) &
+                // 回形针角标只数卡片自己的附件。评论里的图已经被评论
+                // 角标代表了，再数一遍就是同一件事报两次。
+                db.attachments.commentId.isNull(),
           )
           ..groupBy([db.attachments.cardId]);
 

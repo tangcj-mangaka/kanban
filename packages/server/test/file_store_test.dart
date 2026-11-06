@@ -9,10 +9,16 @@ import 'package:test/test.dart';
 
 var _n = 0;
 
-Op attachmentOp(String entityId, String field, Object? value) => Op(
+Op attachmentOp(String entityId, String field, Object? value) =>
+    _op(Entity.attachment, entityId, field, value);
+
+Op boardOp(String entityId, String field, Object? value) =>
+    _op(Entity.board, entityId, field, value);
+
+Op _op(String entity, String entityId, String field, Object? value) => Op(
   opId: 'op-${_n++}',
   boardId: 'b1',
-  entity: Entity.attachment,
+  entity: entity,
   entityId: entityId,
   field: field,
   value: value,
@@ -205,6 +211,58 @@ void main() {
       ]);
 
       expect(store.referencedHashes(), {'新哈希'});
+    });
+
+    test('看板的封面图也算引用', () {
+      // 封面图不是附件记录，是看板自己的字段。服务端要是只认 attachment
+      // 实体，这张图就成了孤儿——而且**一个月后才会被删**，到那时谁也
+      // 想不到是回收把它清掉的。
+      store.append([
+        boardOp('b1', BoardF.coverHash, 'cover-1'),
+        boardOp('b1', BoardF.coverThumbHash, 'cover-thumb-1'),
+      ]);
+
+      expect(store.referencedHashes(), {'cover-1', 'cover-thumb-1'});
+    });
+
+    test('删掉的看板，封面图不再算引用', () {
+      store.append([
+        boardOp('b1', BoardF.coverHash, 'cover-1'),
+        boardOp('b2', BoardF.coverHash, 'cover-2'),
+        boardOp('b1', BoardF.deleted, true),
+      ]);
+
+      expect(store.referencedHashes(), {'cover-2'});
+    });
+
+    test('换了封面图，旧的那张不再算引用', () {
+      store.append([
+        boardOp('b1', BoardF.coverHash, '旧封面'),
+        boardOp('b1', BoardF.coverHash, '新封面'),
+      ]);
+
+      expect(store.referencedHashes(), {'新封面'});
+    });
+
+    test('去掉封面图后不再算引用', () {
+      store.append([
+        boardOp('b1', BoardF.coverHash, 'cover-1'),
+        boardOp('b1', BoardF.coverHash, null),
+      ]);
+
+      expect(store.referencedHashes(), isEmpty);
+    });
+
+    test('看板和附件用同一个 id 时，两边互不干扰', () {
+      // entity_id 只在实体内部唯一。按 (实体, id) 分组，否则一块看板被
+      // 删掉会连带把同 id 的附件算成已删——两个毫不相干的东西。
+      store.append([
+        attachmentOp('x', AttachmentF.hash, 'attach-hash'),
+        boardOp('x', BoardF.coverHash, 'cover-hash'),
+        boardOp('x', BoardF.deleted, true),
+      ]);
+
+      expect(store.referencedHashes(), {'attach-hash'});
     });
 
     test('没人引用的文件不立刻删，先记成孤儿', () {

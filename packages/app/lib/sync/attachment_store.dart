@@ -49,6 +49,13 @@ class AttachmentStore {
   /// 缩略图的长边。够在画布卡片和详情列表里看清，又小到可以全都缓存着。
   static const int thumbLongSide = 400;
 
+  /// 看板封面图的长边。
+  ///
+  /// 封面是装饰不是附件，没人会想把它原样下载回去，所以**不留原图**：
+  /// 手机拍的照片动辄五兆，九块看板就是四十多兆，还要过局域网同步到
+  /// 手机上，不值。压到这个尺寸之后，铺满一块两倍屏的方块绰绰有余。
+  static const int coverLongSide = 1200;
+
   File fileFor(String hash) =>
       File(p.join(cacheDir.path, hash.substring(0, 2), hash));
 
@@ -79,6 +86,56 @@ class AttachmentStore {
       size: bytes.length,
       mime: mime,
       thumbHash: thumbHash,
+    );
+  }
+
+  /// 导入一张看板封面图：**先压缩再算哈希**，原图不入库。
+  ///
+  /// 和 [importFile] 的区别就在这里——附件要的是原件，封面要的是够用的
+  /// 最小一份。所以哈希算的是压缩后的内容，别的设备下到的也是这一份。
+  ///
+  /// 解不开的图片（认不出的格式、坏文件）返回 null，调用方据此提示用户，
+  /// 而不是把一个打不开的哈希写进看板里。
+  Future<ImportedFile?> importCoverImage(
+    File source, {
+    String? displayName,
+  }) async {
+    final raw = await source.readAsBytes();
+    final name = displayName ?? p.basename(source.path);
+
+    final img.Image? decoded;
+    try {
+      decoded = img.decodeImage(raw);
+    } catch (_) {
+      return null;
+    }
+    if (decoded == null) return null;
+
+    final longest = decoded.width >= decoded.height
+        ? decoded.width
+        : decoded.height;
+    final scaled = longest <= coverLongSide
+        ? decoded
+        : (decoded.width >= decoded.height
+              ? img.copyResize(decoded, width: coverLongSide)
+              : img.copyResize(decoded, height: coverLongSide));
+
+    // 带透明通道的（截图里的圆角、logo）转成 JPEG 会把透明处填成黑块，
+    // 盖在面色上就是一片脏。这种留 PNG。
+    final keepAlpha = decoded.hasAlpha;
+    final bytes = keepAlpha
+        ? img.encodePng(scaled)
+        : img.encodeJpg(scaled, quality: 85);
+
+    final hash = await putBytes(bytes);
+    final thumb = await _makeThumbnail(Uint8List.fromList(bytes));
+
+    return ImportedFile(
+      hash: hash,
+      filename: name,
+      size: bytes.length,
+      mime: keepAlpha ? 'image/png' : 'image/jpeg',
+      thumbHash: thumb == null ? null : await putBytes(thumb),
     );
   }
 
