@@ -13,19 +13,10 @@ import '../responsive.dart';
 import '../theme/app_theme.dart';
 import '../theme/haystack_icon.dart';
 import 'board_search.dart';
+import 'board_view.dart';
 import 'done_filter.dart';
 
-enum BoardView {
-  canvas('画布', Icons.dashboard_outlined),
-  grouped('分组', Icons.view_column_outlined),
-  timeline('时间轴', Icons.view_timeline_outlined),
-  haystack('干草仓库', Icons.inventory_2_outlined);
-
-  final String label;
-  final IconData icon;
-
-  const BoardView(this.label, this.icon);
-}
+export 'board_view.dart';
 
 /// 一块看板的外壳：顶栏 + 四种视图之间切换。
 ///
@@ -39,9 +30,16 @@ class BoardPage extends ConsumerStatefulWidget {
 
   /// 进来时停在哪个视图。
   ///
-  /// 不给的话按屏幕宽度定：窄屏默认进分组视图。手机上自由画布很难用——
-  /// 看不到全局、拖动精度差，而分组视图是竖着滑的列表，天然适合小屏。
-  /// 摆位置是电脑上干的事。
+  /// 不给的话先看**上次用的是哪个**（存在本机，见 [boardViewProvider]），
+  /// 还没有记录就进分组。
+  ///
+  /// 分组当兜底而不是画布：打开一块板，多数时候是来看「现在有哪些事、
+  /// 各在什么状态」，分组一屏就把这件事说清楚了；画布是摆位置、理关系的
+  /// 地方，要用的时候再切过去。手机上更是如此——自由画布看不到全局、
+  /// 拖动精度也差，而分组是竖着滑的列表，天然合适。
+  ///
+  /// 没有标签的新板在分组里也不难用：末尾固定有一列「未分类」，
+  /// 在列顶就能新建卡片。
   final BoardView? initialView;
 
   /// 进来后立刻打开这张卡片的详情。
@@ -176,9 +174,10 @@ class _BoardPageState extends ConsumerState<BoardPage> {
     setState(() => _search = _search.focusOn(matches[next].id));
   }
 
+  /// 这里是 `read` 不是 `watch`，故意的：只在进来的那一刻取一次。
+  /// 订阅的话，读盘晚回来一步就会把用户已经切过去的视图拽回去。
   BoardView _defaultView(BuildContext context) =>
-      widget.initialView ??
-      (isCompact(context) ? BoardView.grouped : BoardView.canvas);
+      widget.initialView ?? ref.read(boardViewProvider) ?? BoardView.grouped;
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +249,11 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     overdueCount:
                         ref.watch(overdueCountsProvider)[widget.boardId] ?? 0,
                     compact: compact,
-                    onChanged: (v) => setState(() => _view = v),
+                    onChanged: (v) {
+                      setState(() => _view = v);
+                      // 记下来，下次打开看板就停在这儿。
+                      ref.read(boardViewProvider.notifier).remember(v);
+                    },
                   ),
                   const SizedBox(width: 4),
                   IconButton(

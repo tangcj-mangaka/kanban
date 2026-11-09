@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'providers.dart';
+import 'ui/board/board_view.dart';
 
 /// 两个入口共用的启动流程。
 ///
@@ -41,6 +42,9 @@ class _KeepAlive extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(attachmentSyncerProvider);
+    // 「上次用的视图」读盘是异步的。在这儿先watch 一下，启动时就开始读，
+    // 而不是等用户点进看板那一刻——否则第一块板会先闪一下画布再跳到分组。
+    ref.watch(boardViewProvider);
     return child;
   }
 }
