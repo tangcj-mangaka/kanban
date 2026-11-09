@@ -19,6 +19,7 @@ import 'card_dates.dart';
 import 'move_card_dialog.dart';
 import 'card_history_sheet.dart';
 import 'markdown_editor.dart';
+import 'title_field.dart';
 
 /// 打开卡片详情。
 ///
@@ -45,10 +46,8 @@ class _CardDetailDialog extends ConsumerStatefulWidget {
 }
 
 class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
-  final _titleController = TextEditingController();
   final _commentController = TextEditingController();
   final _commentFocus = FocusNode();
-  bool _titleInitialized = false;
 
   /// 评论框里攒着、还没发出去的图。
   ///
@@ -59,7 +58,6 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
 
   @override
   void dispose() {
-    _titleController.dispose();
     _commentController.dispose();
     _commentFocus.dispose();
     super.dispose();
@@ -79,13 +77,6 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
           child: Center(child: CircularProgressIndicator()),
         ),
       );
-    }
-
-    // 只在第一次填入标题：之后由输入框自己持有，否则每次别处改动
-    // 触发重建都会把光标弹回开头。
-    if (!_titleInitialized) {
-      _titleController.text = card.title;
-      _titleInitialized = true;
     }
 
     final compact = isCompact(context);
@@ -241,18 +232,19 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: TextField(
-            controller: _titleController,
+          child: TitleField(
+            // key 绑到卡片上：换卡片时重建，不会串内容。和正文编辑器一样。
+            key: ValueKey(card.id),
+            initialValue: card.title,
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              hintText: '卡片标题',
+            onChanged: (title) => ref.read(repositoryProvider).setCardField(
+              widget.boardId,
+              card.id,
+              CardF.title,
+              title,
             ),
-            onSubmitted: (_) => _saveTitle(card),
-            onTapOutside: (_) => _saveTitle(card),
           ),
         ),
         PopupMenuButton<String>(
@@ -455,17 +447,6 @@ class _CardDetailDialogState extends ConsumerState<_CardDetailDialog> {
         ),
       ],
     );
-  }
-
-  void _saveTitle(CardRow card) {
-    final text = _titleController.text.trim();
-    if (text == card.title) return;
-    ref.read(repositoryProvider).setCardField(
-          widget.boardId,
-          card.id,
-          CardF.title,
-          text,
-        );
   }
 
   Future<void> _addComment() async {

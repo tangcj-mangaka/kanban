@@ -86,6 +86,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   double _resizeStartGlobalX = 0;
 
   String? _editingId;
+
+  /// 开始改名那一刻的标题，用来判断「到底改没改」。
+  String _editingTitleWas = '';
   final _titleController = TextEditingController();
   final _titleFocus = FocusNode();
 
@@ -101,6 +104,19 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   @override
   void initState() {
     super.initState();
+
+    // 焦点一离开就落盘。
+    //
+    // 画布上本来就有几条提交的路（点空白处、点别的卡片、回车、
+    // `onTapOutside`），但都漏了同一种情况：点进**另一个输入框**，比如
+    // 顶上的搜索框。Flutter 的 TextField 默认都在同一个 TapRegion 组里，
+    // 所以那不算「点到了外面」，`onTapOutside` 不触发——改了一半的标题
+    // 就那么悬着。盯焦点就没有这个洞，谁拿走的都算。
+    _titleFocus.addListener(() {
+      if (!mounted || _titleFocus.hasFocus) return;
+      _commitTitle();
+    });
+
     if (!widget.autoTidy) return;
     // 等高度**稳定**下来再整理，不能只等「每张都量到了」。
     //
@@ -656,6 +672,7 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
   void _startEditTitle(CardRow card) {
     setState(() {
       _editingId = card.id;
+      _editingTitleWas = card.title.trim();
       _titleController.text = card.title;
       _titleController.selection = TextSelection(
         baseOffset: 0,
@@ -670,6 +687,9 @@ class _CanvasViewState extends ConsumerState<CanvasView> {
     if (id == null) return;
     final text = _titleController.text.trim();
     setState(() => _editingId = null);
+    // 没改过就别写。现在提交的路不止一条（失焦也算），每条都写一遍的话，
+    // 「点开重命名又改主意」也会在改动记录里留一条，还白白同步一次。
+    if (text == _editingTitleWas) return;
     ref
         .read(repositoryProvider)
         .setCardField(widget.boardId, id, CardF.title, text);
