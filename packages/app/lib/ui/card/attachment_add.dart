@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../../data/repository.dart';
 import '../../providers.dart';
+import 'paste_image.dart';
 
 /// 往卡片上加附件。
 ///
@@ -86,16 +87,29 @@ Future<ImportedFile?> importBytesForComment(
   WidgetRef ref,
   Uint8List bytes,
 ) async {
+  final (:path, :name) = await _spillPastedImage(bytes);
+  final list = await importForComment(ref, [(path: path, name: name)]);
+  return list.isEmpty ? null : list.first;
+}
+
+/// 把剪贴板里的图落到临时文件，返回路径和文件名。
+///
+/// 先重新编码再落盘：剪贴板给的往往是未压缩的位图（见
+/// [squeezePastedImage]）。名字按**编码之后**的内容定后缀，不然会出现
+/// 一个叫 `.bmp` 的 JPEG。
+Future<({String path, String name})> _spillPastedImage(
+  Uint8List bytes,
+) async {
+  final squeezed = await squeezePastedImage(bytes);
+
   final dir = await Directory(
     p.join(Directory.systemTemp.path, 'kanban-paste'),
   ).create(recursive: true);
 
-  final name = pastedImageName(bytes);
+  final name = pastedImageName(squeezed);
   final file = File(p.join(dir.path, name));
-  await file.writeAsBytes(bytes);
-
-  final list = await importForComment(ref, [(path: file.path, name: name)]);
-  return list.isEmpty ? null : list.first;
+  await file.writeAsBytes(squeezed);
+  return (path: file.path, name: name);
 }
 
 /// 从剪贴板取图，导入本地缓存但不挂上去。拿不到图就返回空。
@@ -124,19 +138,12 @@ Future<void> addAttachmentBytes(
   required String cardId,
   required Uint8List bytes,
 }) async {
-  final dir = await Directory(
-    p.join(Directory.systemTemp.path, 'kanban-paste'),
-  ).create(recursive: true);
-
-  final name = pastedImageName(bytes);
-  final file = File(p.join(dir.path, name));
-  await file.writeAsBytes(bytes);
-
+  final picked = await _spillPastedImage(bytes);
   await addAttachmentFiles(
     ref,
     boardId: boardId,
     cardId: cardId,
-    files: [(path: file.path, name: name)],
+    files: [picked],
   );
 }
 
